@@ -35,7 +35,7 @@ This app allows users to search for products by either entering text or uploadin
 4.  **Run the App:**
 
     ```
-    streamlit run main.py
+    streamlit run app.py
     ```
 
     This will launch the app in your web browser, usually at `http://localhost:8501`.
