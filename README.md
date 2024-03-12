@@ -14,7 +14,7 @@ This app allows users to search for products by either entering text or uploadin
 
     ```
     git clone https://github.com/heymeowcat/VectorSearchShop.git
-    cd mobileAppScreentoTestsGemini
+    cd VectorSearchShop
     ```
 
 2.  **Install Dependencies:**
