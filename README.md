@@ -4,10 +4,6 @@ This app allows users to search for products by either entering text or uploadin
 
 ### Running the App
 
-**Prerequisites:**
-
-- Python 3.7 or later
-
 **Installation:**
 
 1.  **Clone the Repository:**
