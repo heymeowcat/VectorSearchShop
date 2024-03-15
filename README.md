@@ -28,7 +28,15 @@ This app allows users to search for products by either entering text or uploadin
       GEMINI_API_KEY=YOUR_GEMINI_API_KEY
       ```
 
-4.  **Run the App:**
+4.  **Set the Environment Variable:**
+
+    ```
+    export KMP_DUPLICATE_LIB_OK=TRUE
+    ```
+
+    This variable allows the program to continue executing despite the OpenMP conflict,
+
+5.  **Run the App:**
 
     ```
     streamlit run app.py
