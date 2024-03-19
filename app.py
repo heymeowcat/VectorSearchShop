@@ -8,74 +8,15 @@ import google.generativeai as genai
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.vectorstores import FAISS
 
-from transformers import VisionEncoderDecoderModel, ViTImageProcessor, AutoTokenizer
-import torch
-
+load_dotenv()
 try:
-    load_dotenv()
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
     model_vision = genai.GenerativeModel('gemini-pro-vision')
 except Exception as e:
     st.error(f"Error configuring Gemini API: {e}")
     st.stop()
 
-# Initialize the vector store
 vector_store = None
-
-
-try:
-    model = VisionEncoderDecoderModel.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
-    feature_extractor = ViTImageProcessor.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
-    tokenizer = AutoTokenizer.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(device)
-except Exception as e:
-    st.error(f"Error configuring image captioning model: {e}")
-    st.stop()
-
-max_length = 16
-num_beams = 4
-gen_kwargs = {"max_length": max_length, "num_beams": num_beams}
-def predict_step(image_path):
-  """
-  Processes a single image path, generates a caption using a pre-trained model,
-  and returns the predicted caption.
-
-  Args:
-      image_path (str): The path to the image.
-
-  Returns:
-      str: The predicted caption for the image.
-  """
-
-  # Try opening the image
-  try:
-    i_image = Image.open(image_path)
-
-    # Ensure RGB mode for compatibility with feature extractor
-    if i_image.mode != "RGB":
-      i_image = i_image.convert(mode="RGB")
-
-    images = [i_image]  # Convert to a list for consistency
-  except (IOError, OSError) as e:
-    print(f"Error opening image {image_path}: {e}")
-    # Consider returning a special value or throwing an exception
-    # to indicate a processing error
-    return None  # Or return an appropriate error indicator
-
-  # Move image to device (CPU or GPU) if using PyTorch
-  pixel_values = feature_extractor(images=images, return_tensors="pt").pixel_values
-  pixel_values = pixel_values.to(device)
-
-  # Generate captions
-  output_ids = model.generate(pixel_values, **gen_kwargs)
-
-  # Decode and post-process captions (single caption in this case)
-  preds = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
-  pred = preds[0].strip()  # Extract the first (and only) prediction
-
-  return pred
 
 # Connect to SQLite database
 conn = sqlite3.connect("products.db")
@@ -112,12 +53,63 @@ def image_to_bytes(image):
         img_bytes = buffer.getvalue()
     return img_bytes
 
+# Generate image captions using the Gemini Pro Vision model
+def generate_image_captions(image):
+    try:
+        prompt = [
+            "List relevant search tags for the given image, separated by commas.",
+            image,
+        ]
+        response = model_vision.generate_content(prompt)
+        image_captions = response.text
+        return image_captions
+    except Exception as e:
+        st.error(f"Error generating image captions: {str(e)}")
+        return None
+
 # Add product to the database and update the vector store
-def add_product(name, description, image, imageCaptions):
+def add_product(name, description, image):
     image_bytes = image_to_bytes(image)
-    c.execute("INSERT INTO products (name, description, image, image_captions) VALUES (?, ?, ?, ?)", (name, description, image_bytes, imageCaptions))
+    image_captions = generate_image_captions(image)
+    c.execute("INSERT INTO products (name, description, image, image_captions) VALUES (?, ?, ?, ?)", (name, description, image_bytes, image_captions))
     conn.commit()
     update_vector_store()
+    
+# Update the vector store with the new product data
+def update_vector_store():
+    global vector_store
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    products = load_products()
+    product_data = []
+    for product in products:
+        product_data.append({
+            "id": product["id"],
+            "name": product["name"],
+            "description": product["description"],
+            "image": image_to_bytes(product["image"]),
+            "image_captions": product["image_captions"]
+        })
+    product_texts = [f"{p['name']} {p['description']} {p['image_captions']}" for p in product_data]
+    vector_store = FAISS.from_texts(product_texts, embeddings, metadatas=product_data)
+    vector_store.save_local("faiss_index")
+
+
+
+
+# Search products using text and image embeddings
+def search_products(search_term):
+    global vector_store
+    if vector_store is None:
+        update_vector_store()
+    # to search from local faiss index 
+    # embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")  
+    # new_db = FAISS.load_local("faiss_index", embeddings)    
+    # search_results = new_db.similarity_search(search_term, k=5)
+
+    search_results = vector_store.similarity_search(search_term, k=5)
+    filtered_products = [result.metadata for result in search_results]
+    return filtered_products
+
 
 # Display products
 def display_products(products):
@@ -127,7 +119,7 @@ def display_products(products):
             st.image(product["image"], use_column_width=True)
             st.write(f"**{product['name']}**")
             st.write(product["description"])
-            st.write(product["image_captions"])
+            # st.write(product["image_captions"])
     if not products:
         st.warning("No products found.")
 
@@ -148,14 +140,13 @@ def add_product_form():
                 try:
                     with st.spinner("Generating description..."):
                         prompt_parts_vision = [
-                            "Generate a product description for the product in very few words.\n\Product's image:\n\n",
-                            image,
-                        ]
+                            "Generate a product description for the product in very few words.\nProduct's image:\n\n",
+                            image,]
                         response = model_vision.generate_content(prompt_parts_vision)
                         generated_description = response.text
                         description = generated_description
                         st.session_state["default"] = description
-                        st.experimental_rerun()
+                        st.rerun()
                 except Exception as e:
                     st.error(f"Error generating description: {str(e)}")
             else:
@@ -163,40 +154,11 @@ def add_product_form():
         if st.button("Add Product"):
             if name and description and file:
                 image = Image.open(file)
-                imageCaption = predict_step(file) 
-                add_product(name, description, image, imageCaption)
+                add_product(name, description, image)
                 st.success("Product added successfully!")
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error("Please fill in all fields and upload an image.")
-
-
-# Update the vector store with the new product data
-def update_vector_store():
-    global vector_store
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    products = load_products()
-    product_data = []
-    for product in products:
-        product_data.append({
-            "id": product["id"],
-            "name": product["name"],
-            "description": product["description"],
-            "image": image_to_bytes(product["image"]),
-            "image_captions": product["image_captions"]
-        })
-    product_texts = [f"{p['name']} {p['description']} {p['image_captions']}" for p in product_data]
-    vector_store = FAISS.from_texts(product_texts, embeddings, metadatas=product_data)
-
-
-# Search products using text and image embeddings
-def search_products(search_term):
-    global vector_store
-    if vector_store is None:
-        update_vector_store()
-    search_results = vector_store.similarity_search(search_term, k=5)
-    filtered_products = [result.metadata for result in search_results]
-    return filtered_products
 
 def main():
     st.title("Product Shop")
