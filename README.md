@@ -21,7 +21,7 @@ This app allows users to search for products by either entering text or uploadin
 
 3.  **Set Up Gemini API Key:**
 
-    - Create a project and obtain an API key from Google AI Platform:
+    - Create a project and obtain an API key from http://aistudio.google.com/app/apikey:
     - Create a `.env` file in the project root directory and add the following line, replacing `YOUR_GEMINI_API_KEY` with your actual key:
 
       ```
@@ -58,14 +58,13 @@ The app uses the following key components and libraries:
 - **Streamlit**: A Python library for building interactive web applications.
 - **SQLite**: A lightweight, file-based database for storing product data.
 - **LangChain**: A framework for building applications with large language models, used for text-based vector similarity search and generating product descriptions.
-- **Hugging Face Transformers**: A library for loading pre-trained models, used for generating image embeddings for image-based similarity search.
 - **Google Generative AI API**: The Gemini Pro Vision model is used for generating product descriptions from images.
 
 The application flow is as follows:
 
 1. Users can search for products by entering a text query or uploading an image.
 2. For text-based searches, the app generates text embeddings using the `GoogleGenerativeAIEmbeddings` from LangChain and performs a similarity search on the product data using a FAISS vector store.
-3. For image-based searches, the app generates image embeddings using the pre-trained `VisionEncoderDecoderModel` and `ViTImageProcessor` from the Hugging Face Transformers library. It then performs a similarity search by vector using the generated image embeddings and the FAISS vector store.
+3. For image-based searches, the app generates image search tags using the Gemini Pro Vision model. It then performs a similarity search by vector using the generated image captions and the FAISS vector store.
 4. The retrieved products are displayed in a grid layout, showing the product image, name, and description.
 5. Users can add new products by uploading an image, providing a name and description, and optionally generating a description using the Gemini Pro Vision model.
 

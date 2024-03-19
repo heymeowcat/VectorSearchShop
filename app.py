@@ -8,6 +8,7 @@ import google.generativeai as genai
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.vectorstores import FAISS
 
+
 load_dotenv()
 try:
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
@@ -119,7 +120,7 @@ def display_products(products):
             st.image(product["image"], use_column_width=True)
             st.write(f"**{product['name']}**")
             st.write(product["description"])
-            # st.write(product["image_captions"])
+            st.write(product["image_captions"])
     if not products:
         st.warning("No products found.")
 
