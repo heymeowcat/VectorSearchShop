@@ -80,37 +80,54 @@ def add_product(name, description, image):
 def update_vector_store():
     global vector_store
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+
     products = load_products()
     product_data = []
+
     for product in products:
+        name = product["name"]
+        description = product["description"]
+        image_captions = product["image_captions"]
+
+        # Prioritize name, description, and image captions
+        # If name is empty or contains a placeholder ('-'), prioritize description
+        # If both name and description are empty or contain placeholders, prioritize image captions
+        if name and name != '-':
+            product_text = f"{name} {description} {image_captions}"
+        elif description and description != '-':
+            product_text = f"{description} {image_captions}"
+        else:
+            product_text = image_captions
+
         product_data.append({
             "id": product["id"],
-            "name": product["name"],
-            "description": product["description"],
+            "name": name,
+            "description": description,
             "image": image_to_bytes(product["image"]),
-            "image_captions": product["image_captions"]
+            "image_captions": image_captions,
+            "product_text": product_text
         })
-    product_texts = [f"{p['name']} {p['description']} {p['image_captions']}" for p in product_data]
+
+    product_texts = [p['product_text'] for p in product_data]
     vector_store = FAISS.from_texts(product_texts, embeddings, metadatas=product_data)
     vector_store.save_local("faiss_index")
 
 
-
-
 # Search products using text and image embeddings
-def search_products(search_term):
+def search_products(search_term, k=5):
     global vector_store
     if vector_store is None:
         update_vector_store()
+
     # to search from local faiss index 
     # embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")  
     # new_db = FAISS.load_local("faiss_index", embeddings)    
-    # search_results = new_db.similarity_search(search_term, k=5)
+    # search_results = new_db.similarity_search(search_term, k=5)    
 
-    search_results = vector_store.similarity_search(search_term, k=5)
+    search_results = vector_store.similarity_search(search_term, k=k)
     filtered_products = [result.metadata for result in search_results]
-    return filtered_products
 
+    return filtered_products
 
 # Display products
 def display_products(products):
@@ -165,10 +182,11 @@ def main():
     st.title("Product Shop")
     with st.sidebar:
         search_term = st.text_input("Search Products")
+        k_value = st.number_input("Number of results", min_value=1, value=5, step=1)
         search_button = st.button("Search")
 
     if search_button and search_term:
-        search_results = search_products(search_term)
+        search_results = search_products(search_term, k=k_value)
         if search_results:
             display_products(search_results)
         else:
