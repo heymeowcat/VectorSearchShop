@@ -8,6 +8,11 @@ import google.generativeai as genai
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.vectorstores import FAISS
 
+import open_clip
+from langchain_experimental.open_clip import OpenCLIPEmbeddings
+from langchain.vectorstores import FAISS
+from PIL import Image
+
 
 load_dotenv()
 try:
@@ -89,15 +94,8 @@ def update_vector_store():
         description = product["description"]
         image_captions = product["image_captions"]
 
-        # Prioritize name, description, and image captions
-        # If name is empty or contains a placeholder ('-'), prioritize description
-        # If both name and description are empty or contain placeholders, prioritize image captions
-        if name and name != '-':
-            product_text = f"{name} {description} {image_captions}"
-        elif description and description != '-':
-            product_text = f"{description} {image_captions}"
-        else:
-            product_text = image_captions
+        product_text = f"{name} {description} {image_captions}"
+        product_text = product_text.replace("-", "").strip()
 
         product_data.append({
             "id": product["id"],
@@ -125,6 +123,27 @@ def search_products(search_term, k=5):
     # search_results = new_db.similarity_search(search_term, k=5)    
 
     search_results = vector_store.similarity_search(search_term, k=k)
+    filtered_products = [result.metadata for result in search_results]
+
+    return filtered_products
+
+def openclip_search(search_term, k=5):
+    model_name = "ViT-g-14"
+    checkpoint = "laion2b_s34b_b88k"
+    openclip_embeddings = OpenCLIPEmbeddings(model_name=model_name, checkpoint=checkpoint)
+
+    if vector_store is None:
+        products = load_products()
+        product_texts = [f"{p['name']} {p['description']} {p['image_captions']}" for p in products]
+        product_images = [p['image'] for p in products]
+        vector_store = FAISS.from_texts(product_texts, openclip_embeddings, metadatas=products)
+        vector_store.add_images(product_images, openclip_embeddings)
+
+    if search_term.startswith("http"): 
+        search_results = vector_store.similarity_search_by_image(search_term, k=k)
+    else:
+        search_results = vector_store.similarity_search(search_term, k=k)
+
     filtered_products = [result.metadata for result in search_results]
 
     return filtered_products
@@ -184,9 +203,14 @@ def main():
         search_term = st.text_input("Search Products")
         k_value = st.number_input("Number of results", min_value=1, value=5, step=1)
         search_button = st.button("Search")
+        search_method = st.radio("Search Method", ["Old", "OpenCLIP"])
 
     if search_button and search_term:
-        search_results = search_products(search_term, k=k_value)
+        if search_method == "Old":
+            search_results = search_products(search_term, k=k_value)
+        else:
+            search_results = openclip_search(search_term, k=k_value)
+
         if search_results:
             display_products(search_results)
         else:
@@ -198,4 +222,5 @@ def main():
     add_product_form()
 
 if __name__ == "__main__":
+    vector_store = None
     main()
