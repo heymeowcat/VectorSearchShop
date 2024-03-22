@@ -61,7 +61,7 @@ def image_to_bytes(image):
 def generate_image_captions(image):
     try:
         prompt = [
-            "List relevant search tags for the given image, separated by commas.",
+            "List relevant search tags up to 10 for the given image, separated by commas.",
             image,
         ]
         response = model_vision.generate_content(prompt)
@@ -173,7 +173,7 @@ def display_products(products):
             st.image(product["image"], use_column_width=True)
             st.write(f"**{product['name']}**")
             st.write(product["description"])
-            st.write(product["image_captions"])
+            # st.write(product["image_captions"])
     if not products:
         st.warning("No products found.")
 
@@ -214,19 +214,46 @@ def add_product_form():
             else:
                 st.error("Please fill in all fields and upload an image.")
 
+
+def generate_search_tag(image):
+    try:
+        prompt = [
+            "List a relevant search tag in one word for the given image.",
+            image,
+        ]
+        response = model_vision.generate_content(prompt)
+        search_tag = response.text.strip()
+        return search_tag
+    except Exception as e:
+        st.error(f"Error generating search tag: {str(e)}")
+        return None
+
+
 def main():
     st.title("Product Shop")
     with st.sidebar:
         search_term = st.text_input("Search Products")
+        search_image = st.file_uploader("Search by Image", type=["jpg", "png", "jpeg"])
         k_value = st.number_input("Number of results", min_value=1, value=5, step=1)
         search_button = st.button("Search")
-        search_method = st.radio("Search Method", ["Similarity Search", "Semantic Search"])
+        search_method = st.radio("Search Method", ["FAISS", "Semantic Search", "Search by Image"])
 
-    if search_button and search_term:
-        if search_method == "Similarity Search":
+    if search_button:
+        if search_method == "FAISS":
             search_results = search_products_faiss(search_term, k=k_value)
-        else:
+        elif search_method == "Semantic Search":
             search_results = search_products_semantic(search_term, k=k_value)
+        elif search_method == "Search by Image":
+            if search_image:
+                image = Image.open(search_image)
+                search_tag = generate_search_tag(image)
+                if search_tag:
+                    search_results = search_products_semantic(search_tag, k=k_value)
+                else:
+                    search_results = []
+            else:
+                st.warning("Please upload an image to search.")
+                search_results = []
 
         if search_results:
             display_products(search_results)
