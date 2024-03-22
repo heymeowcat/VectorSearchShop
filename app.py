@@ -10,6 +10,7 @@ from langchain.vectorstores import FAISS
 
 from sentence_transformers import SentenceTransformer
 import torch
+import matplotlib.pyplot as plt
 
 load_dotenv()
 try:
@@ -91,15 +92,8 @@ def update_vector_store():
         description = product["description"]
         image_captions = product["image_captions"]
 
-        # Prioritize name, description, and image captions
-        # If name is empty or contains a placeholder ('-'), prioritize description
-        # If both name and description are empty or contain placeholders, prioritize image captions
-        if name and name != '-':
-            product_text = f"{name} {description} {image_captions}"
-        elif description and description != '-':
-            product_text = f"{description} {image_captions}"
-        else:
-            product_text = image_captions
+        product_text = f"{name} {description} {image_captions}"
+        product_text = product_text.replace("-", "").strip()
 
         product_data.append({
             "id": product["id"],
@@ -143,6 +137,29 @@ def search_products_semantic(search_term, k=5):
 
     # Sort products by similarity and select top k
     sorted_indices = torch.argsort(similarities, descending=True)
+    sorted_products = [products[idx] for idx in sorted_indices]
+    sorted_similarities = similarities[sorted_indices]
+
+    # Display search term and similarity chart
+    st.subheader(f"Search Term: {search_term}")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.bar(range(len(sorted_products)), sorted_similarities.tolist())
+    ax.set_xticks(range(len(sorted_products)))
+    ax.set_xticklabels([f"{p['name'][:20]}..." for p in sorted_products], rotation=45, ha='right')
+    ax.set_xlabel("Products")
+    ax.set_ylabel("Similarity")
+    st.pyplot(fig)
+
+    # # Filter out products with large similarity differences
+    # similarity_threshold = 0.5  # Adjust this value as needed
+    # filtered_products = []
+    # prev_similarity = 1.0
+    # for product, similarity in zip(sorted_products, sorted_similarities):
+    #     if similarity >= prev_similarity - similarity_threshold:
+    #         filtered_products.append(product)
+    #         prev_similarity = similarity
+    #     else:
+    #         break
     filtered_products = [products[idx] for idx in sorted_indices[:k]]
 
     return filtered_products
@@ -206,7 +223,7 @@ def main():
         search_method = st.radio("Search Method", ["Similarity Search", "Semantic Search"])
 
     if search_button and search_term:
-        if search_method == "FAISS":
+        if search_method == "Similarity Search":
             search_results = search_products_faiss(search_term, k=k_value)
         else:
             search_results = search_products_semantic(search_term, k=k_value)
