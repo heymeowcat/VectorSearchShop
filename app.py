@@ -8,6 +8,8 @@ import google.generativeai as genai
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.vectorstores import FAISS
 
+from sentence_transformers import SentenceTransformer
+import torch
 
 load_dotenv()
 try:
@@ -114,20 +116,37 @@ def update_vector_store():
 
 
 # Search products using text and image embeddings
-def search_products(search_term, k=5):
+def search_products_faiss(search_term, k=5):
     global vector_store
     if vector_store is None:
         update_vector_store()
-
-    # to search from local faiss index 
-    # embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")  
-    # new_db = FAISS.load_local("faiss_index", embeddings)    
-    # search_results = new_db.similarity_search(search_term, k=5)    
 
     search_results = vector_store.similarity_search(search_term, k=k)
     filtered_products = [result.metadata for result in search_results]
 
     return filtered_products
+
+# Search products using semantic search
+def search_products_semantic(search_term, k=5):
+    # Load a pre-trained sentence transformer model
+    model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+
+    # Encode the search term
+    search_term_embedding = model.encode([search_term])[0]
+
+    products = load_products()
+    product_texts = [f"{p['name']} {p['description']} {p['image_captions']}" for p in products]
+    product_embeddings = model.encode(product_texts)
+
+    # Compute cosine similarities
+    similarities = torch.nn.functional.cosine_similarity(torch.tensor(product_embeddings), torch.tensor(search_term_embedding).unsqueeze(0))
+
+    # Sort products by similarity and select top k
+    sorted_indices = torch.argsort(similarities, descending=True)
+    filtered_products = [products[idx] for idx in sorted_indices[:k]]
+
+    return filtered_products
+
 
 # Display products
 def display_products(products):
@@ -184,9 +203,14 @@ def main():
         search_term = st.text_input("Search Products")
         k_value = st.number_input("Number of results", min_value=1, value=5, step=1)
         search_button = st.button("Search")
+        search_method = st.radio("Search Method", ["Similarity Search", "Semantic Search"])
 
     if search_button and search_term:
-        search_results = search_products(search_term, k=k_value)
+        if search_method == "FAISS":
+            search_results = search_products_faiss(search_term, k=k_value)
+        else:
+            search_results = search_products_semantic(search_term, k=k_value)
+
         if search_results:
             display_products(search_results)
         else:
