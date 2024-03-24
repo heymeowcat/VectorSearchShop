@@ -6,7 +6,8 @@ import sqlite3
 from io import BytesIO
 import google.generativeai as genai
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain.vectorstores import FAISS
+from langchain_community.vectorstores import FAISS
+from langchain_openai import OpenAIEmbeddings
 
 from sentence_transformers import SentenceTransformer
 import torch
@@ -20,6 +21,7 @@ except Exception as e:
     st.error(f"Error configuring Gemini API: {e}")
     st.stop()
 
+os.environ["OPENAI_API_KEY"]=os.getenv("OPENAI_API_KEY") 
 vector_store = None
 
 # Connect to SQLite database
@@ -82,31 +84,35 @@ def add_product(name, description, image):
 # Update the vector store with the new product data
 def update_vector_store():
     global vector_store
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
 
     products = load_products()
-    product_data = []
 
-    for product in products:
-        name = product["name"]
-        description = product["description"]
-        image_captions = product["image_captions"]
+    if products:
+        product_data = []
+        product_texts = []
 
-        product_text = f"{name} {description} {image_captions}"
-        product_text = product_text.replace("-", "").strip()
+        for product in products:
+            name = product["name"]
+            description = product["description"]
+            image_captions = product["image_captions"]
 
-        product_data.append({
-            "id": product["id"],
-            "name": name,
-            "description": description,
-            "image": image_to_bytes(product["image"]),
-            "image_captions": image_captions,
-            "product_text": product_text
-        })
+            product_text = f"{name} {description} {image_captions}"
+            product_text = product_text.replace("-", "").strip()
 
-    product_texts = [p['product_text'] for p in product_data]
-    vector_store = FAISS.from_texts(product_texts, embeddings, metadatas=product_data)
-    vector_store.save_local("faiss_index")
+            product_texts.append(product_text)
+            product_data.append({
+                "id": product["id"],
+                "name": name,
+                "description": description,
+                "image": image_to_bytes(product["image"]),
+                "image_captions": image_captions,
+                "product_text": product_text
+            })
+
+
+        embeddings = OpenAIEmbeddings()  
+        vector_store = FAISS.from_texts(product_texts, embeddings, metadatas=product_data)
+        vector_store.save_local("faiss_index")
 
 
 # Search products using text and image embeddings
@@ -173,7 +179,7 @@ def display_products(products):
             st.image(product["image"], use_column_width=True)
             st.write(f"**{product['name']}**")
             st.write(product["description"])
-            st.write(product["image_captions"])
+            # st.write(product["image_captions"])
     if not products:
         st.warning("No products found.")
 
@@ -239,7 +245,7 @@ def main():
         search_method = st.radio("Search Method", ["Semantic Search", "Search by Image", "FAISS similarity Search"])
 
     if search_button:
-        if search_method == "FAISS":
+        if search_method == "FAISS similarity Search":
             search_results = search_products_faiss(search_term, k=k_value)
         elif search_method == "Semantic Search":
             search_results = search_products_semantic(search_term, k=k_value)
