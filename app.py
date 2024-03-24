@@ -61,7 +61,7 @@ def image_to_bytes(image):
 def generate_image_captions(image):
     try:
         prompt = [
-            "List relevant search tags up to 10 for the given image, separated by commas.",
+            "Generate up to 15 relevant search tags for the given image, separated by commas, including product category, brand, colors, patterns, materials, and distinctive features, considering multiple products if present.",
             image,
         ]
         response = model_vision.generate_content(prompt)
@@ -173,7 +173,7 @@ def display_products(products):
             st.image(product["image"], use_column_width=True)
             st.write(f"**{product['name']}**")
             st.write(product["description"])
-            # st.write(product["image_captions"])
+            st.write(product["image_captions"])
     if not products:
         st.warning("No products found.")
 
@@ -218,7 +218,7 @@ def add_product_form():
 def generate_search_tag(image):
     try:
         prompt = [
-            "List a relevant search tag in one word for the given image.",
+            "Generate up to 15 relevant search tags for the given image, separated by commas, including product category, brand, colors, patterns, materials, and distinctive features, considering multiple products if present.",
             image,
         ]
         response = model_vision.generate_content(prompt)
@@ -236,7 +236,7 @@ def main():
         search_image = st.file_uploader("Search by Image", type=["jpg", "png", "jpeg"])
         k_value = st.number_input("Number of results", min_value=1, value=5, step=1)
         search_button = st.button("Search")
-        search_method = st.radio("Search Method", ["FAISS", "Semantic Search", "Search by Image"])
+        search_method = st.radio("Search Method", ["Semantic Search", "Search by Image", "FAISS similarity Search"])
 
     if search_button:
         if search_method == "FAISS":
