@@ -7,7 +7,6 @@ from io import BytesIO
 import google.generativeai as genai
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
-from langchain_openai import OpenAIEmbeddings
 
 from sentence_transformers import SentenceTransformer
 import torch
@@ -21,7 +20,7 @@ except Exception as e:
     st.error(f"Error configuring Gemini API: {e}")
     st.stop()
 
-os.environ["OPENAI_API_KEY"]=os.getenv("OPENAI_API_KEY") 
+embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
 vector_store = None
 
 # Connect to SQLite database
@@ -109,8 +108,7 @@ def update_vector_store():
                 "product_text": product_text
             })
 
-
-        embeddings = OpenAIEmbeddings()  
+       
         vector_store = FAISS.from_texts(product_texts, embeddings, metadatas=product_data)
         vector_store.save_local("faiss_index")
 
