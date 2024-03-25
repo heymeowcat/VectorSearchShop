@@ -80,7 +80,7 @@ def image_to_bytes(image):
 def generate_image_captions(image):
     try:
         prompt = [
-            "Generate up to 15 relevant search tags for the given image, separated by commas, including product category, brand, colors, patterns, materials, and distinctive features, considering multiple products if present.",
+            "List up to 15 relevant search tags for the given image, separated by commas, including product category, brand, colors, patterns, materials, and distinctive features, considering multiple products if present.",
             image,
         ]
         response = model_vision.generate_content(prompt)
@@ -289,7 +289,7 @@ def display_product_details(product):
 def generate_search_tag(image):
     try:
         prompt = [
-            "Generate relevant search tags for the given image, separated by commas, including product category, brand, model, specifications, colors, patterns, materials, and distinctive features, considering multiple products if present.",
+            "List relevant search tags for the given image, separated by commas, including product category, brand, model, specifications, colors, patterns, materials, and distinctive features, considering multiple products if present.",
             image,
         ]
         response = model_vision.generate_content(prompt)
