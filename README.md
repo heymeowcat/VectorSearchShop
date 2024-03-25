@@ -36,7 +36,18 @@ This app allows users to search for products by either entering text or uploadin
 
     This variable allows the program to continue executing despite the OpenMP conflict,
 
-5.  **Run the App:**
+5.  **Set Up Qdrant:**
+
+    - Install Docker (if not already installed)
+    - Run the following command to start a Qdrant instance:
+
+    ```
+    docker run -p 6333:6333 -p 6334:6334 \
+    -v $(pwd)/qdrant_storage:/qdrant/storage:z \
+    qdrant/qdrant
+    ```
+
+6.  **Run the App:**
 
     ```
     streamlit run app.py
