@@ -1,2 +1,5 @@
 .env
 .DS_Store
+vector_search_shop_env/
+qdrant_storage/
+localhost:6333/

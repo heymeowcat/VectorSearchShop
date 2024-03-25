@@ -12,6 +12,13 @@ from sentence_transformers import SentenceTransformer
 import torch
 import matplotlib.pyplot as plt
 
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, VectorParams
+from qdrant_client.http.models import Distance, PointStruct, VectorParams
+
+
+
+
 load_dotenv()
 try:
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
@@ -19,9 +26,18 @@ try:
 except Exception as e:
     st.error(f"Error configuring Gemini API: {e}")
     st.stop()
-
+    
 embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
 vector_store = None
+
+
+# Create a new Qdrant client instance
+client = QdrantClient("localhost", port=6333)
+
+# client.recreate_collection(
+#     collection_name="products",
+#     vectors_config=VectorParams(size=768, distance=Distance.COSINE),
+# )
 
 # Connect to SQLite database
 conn = sqlite3.connect("products.db")
@@ -124,6 +140,75 @@ def search_products_faiss(search_term, k=5):
     filtered_products = [result.metadata for result in search_results]
 
     return filtered_products
+
+# Search products using qdrant
+def search_products_qdrant(search_term, k=5):
+    products = load_products()
+    filtered_products = []
+
+    if products:
+        texts = []
+
+        for product in products:
+            name = product["name"]
+            description = product["description"]
+            image_captions = product["image_captions"]
+            product_text = f"{name} {description} {image_captions}"
+            product_text = product_text.replace("-", "").strip()
+            texts.append(product_text)
+
+        # Embed all product texts
+        results = [
+            genai.embed_content(
+                model="models/embedding-001",
+                content=sentence,
+                task_type="retrieval_document",
+                title="Qdrant x Gemini",
+            )
+            for sentence in texts
+        ]
+
+        # Upsert all product texts into Qdrant
+        client.upsert(
+            collection_name="products",
+            points=[
+                PointStruct(
+                    id=idx,
+                    vector=response["embedding"],
+                    payload={"text": text},
+                )
+                for idx, (response, text) in enumerate(zip(results, texts))
+            ],
+        )
+
+        # Search within all product texts
+        search_result = client.search(
+            collection_name='products',
+            query_vector=genai.embed_content(
+                model="models/embedding-001",
+                content=search_term,
+                task_type="retrieval_query",
+            )["embedding"],
+        )
+
+        # Extract payload texts from search results
+        filtered_texts = [result.payload["text"] for result in search_result]
+
+        # Retrieve the actual product objects using the filtered texts with the order
+        for text in filtered_texts:
+            for product in products:
+                name = product["name"]
+                description = product["description"]
+                image_captions = product["image_captions"]
+                product_text = f"{name} {description} {image_captions}"
+                product_text = product_text.replace("-", "").strip()
+
+                if product_text == text:
+                    filtered_products.append(product)
+                    break
+
+    return filtered_products
+
 
 # Search products using semantic search
 def search_products_semantic(search_term, k=5):
@@ -266,7 +351,7 @@ def main():
     search_image = st.file_uploader("Search by Image", type=["jpg", "png", "jpeg"])
     k_value = st.number_input("Number of results", min_value=1, value=5, step=1)
     search_button = st.button("Search")
-    search_method = st.radio("Search Method", ["Semantic Search", "Search by Image", "FAISS Similarity Search"])
+    search_method = st.radio("Search Method", ["Semantic Search", "Search by Image", "FAISS Similarity Search","Qdrant Search"])
     view_mode = st.radio("View Mode", ["Grid", "List"], index=1)
 
     if search_button:
@@ -285,6 +370,8 @@ def main():
             else:
                 st.warning("Please upload an image to search.")
                 search_results = []
+        elif search_method == "Qdrant Search":
+            search_results = search_products_qdrant(search_term, k=k_value)
 
         if search_results:
             if view_mode == "Grid":
