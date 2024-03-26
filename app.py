@@ -139,14 +139,14 @@ def search_products_qdrant(search_term, k=5):
         )["embedding"],
     )
 
-    # Extract payload texts from search results
-    filtered_texts = [result.payload["text"] for result in search_result]
+    # Extract payload texts and scores from search results
+    filtered_texts = [(result.payload["text"], result.score) for result in search_result]
 
     products = load_products()
     filtered_products = []
 
-    # Retrieve the actual product objects using the filtered texts
-    for text in filtered_texts:
+    # Retrieve the actual product objects using the filtered texts and scores
+    for text, score in filtered_texts:
         for product in products:
             name = product["name"]
             description = product["description"]
@@ -155,18 +155,20 @@ def search_products_qdrant(search_term, k=5):
             product_text = product_text.replace("-", "").strip()
 
             if product_text == text:
-                filtered_products.append(product)
+                filtered_products.append((product, score))
                 break
 
     return filtered_products[:k]
 
 # Display product card
-def display_product_card(product, is_main=True, is_grid=False):
+def display_product_card(product, score, is_main=True, is_grid=False):
     if is_grid:
         st.image(product["image"], use_column_width=True)
         st.subheader(product["name"])
         if product['price']:
             st.write(f"Price: ${product['price']:.2f}")
+        st.progress(score)
+        st.text(f"Score: {score:.2f}")
     else:
         col1, col2 = st.columns([1, 2])
         with col1:
@@ -179,6 +181,8 @@ def display_product_card(product, is_main=True, is_grid=False):
             if len(description) > 100:
                 description = f"{description[:100]}..."
             st.write(f"Description: {description}")
+            st.progress(score)
+            st.text(f"Score: {score:.2f}")
 
     key_prefix = "main_product" if is_main else "similar_product"
     view_details_button = st.button("View Details", key=f"{key_prefix}_{product['id']}")
@@ -251,19 +255,25 @@ def main():
 
         if search_results:
             if view_mode == "Grid":
-                display_products_grid(search_results)
+                cols = st.columns(3)
+                for i, (product, score) in enumerate(search_results):
+                    with cols[i % 3]:
+                        display_product_card(product, score, is_main=True, is_grid=True)
             else:
-                for product in search_results:
-                    display_product_card(product, is_main=True)
+                for product, score in search_results:
+                    display_product_card(product, score, is_main=True)
         else:
             st.warning("No products found.")
     else:
         products = load_products()
         if view_mode == "Grid":
-            display_products_grid(products)
+            cols = st.columns(3)
+            for i, product in enumerate(products):
+                with cols[i % 3]:
+                    display_product_card(product, 1.0, is_main=True, is_grid=True)
         else:
             for product in products:
-                display_product_card(product, is_main=True)
+                display_product_card(product, 1.0, is_main=True)
 
     add_product_form()
 
