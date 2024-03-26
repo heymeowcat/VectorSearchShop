@@ -1,6 +1,8 @@
 # VectorSearchShop
 
 This app allows users to search for products by either entering text or uploading an image, and retrieves relevant products from a database
+<img width="1512" alt="Screenshot 2024-03-26 at 5 54 27 PM" src="https://github.com/heymeowcat/VectorSearchShop/assets/40495273/5de95b98-1124-4fb4-a48e-357c7da372a0">
+
 
 ### Running the App
 
