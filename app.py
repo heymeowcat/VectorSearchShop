@@ -6,18 +6,10 @@ import sqlite3
 from io import BytesIO
 import google.generativeai as genai
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_community.vectorstores import FAISS
-
-from sentence_transformers import SentenceTransformer
-import torch
-import matplotlib.pyplot as plt
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
 from qdrant_client.http.models import Distance, PointStruct, VectorParams
-
-
-
 
 load_dotenv()
 try:
@@ -28,12 +20,11 @@ except Exception as e:
     st.stop()
     
 embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-vector_store = None
-
 
 # Create a new Qdrant client instance
 client = QdrantClient("localhost", port=6333)
 
+# uncomment this part if qdrant collection is not present
 # client.recreate_collection(
 #     collection_name="products",
 #     vectors_config=VectorParams(size=768, distance=Distance.COSINE),
@@ -59,7 +50,6 @@ def load_products():
             "image": bytes_to_image(row[3]),
             "image_captions": row[4],
             "price": row[5],
-
         }
         products.append(product)
     return products
@@ -100,51 +90,7 @@ def add_product(name, description, price, image):
 
 # Update the vector store with the new product data
 def update_vector_store():
-    global vector_store
-
     products = load_products()
-
-    if products:
-        product_data = []
-        product_texts = []
-
-        for product in products:
-            name = product["name"]
-            description = product["description"]
-            image_captions = product["image_captions"]
-
-            product_text = f"{name} {description} {image_captions}"
-            product_text = product_text.replace("-", "").strip()
-
-            product_texts.append(product_text)
-            product_data.append({
-                "id": product["id"],
-                "name": name,
-                "description": description,
-                "image": image_to_bytes(product["image"]),
-                "image_captions": image_captions,
-                "price": product["price"],
-                "product_text": product_text
-            })
-
-        vector_store = FAISS.from_texts(product_texts, embeddings, metadatas=product_data)
-        vector_store.save_local("faiss_index")
-
-# Search products using text and image embeddings
-def search_products_faiss(search_term, k=5):
-    global vector_store
-    if vector_store is None:
-        update_vector_store()
-
-    search_results = vector_store.similarity_search(search_term, k=k)
-    filtered_products = [result.metadata for result in search_results]
-
-    return filtered_products
-
-# Search products using qdrant
-def search_products_qdrant(search_term, k=5):
-    products = load_products()
-    filtered_products = []
 
     if products:
         texts = []
@@ -181,68 +127,38 @@ def search_products_qdrant(search_term, k=5):
             ],
         )
 
-        # Search within all product texts
-        search_result = client.search(
-            collection_name='products',
-            query_vector=genai.embed_content(
-                model="models/embedding-001",
-                content=search_term,
-                task_type="retrieval_query",
-            )["embedding"],
-        )
+# Search products using Qdrant
+def search_products_qdrant(search_term, k=5):
+    # Search within all product texts
+    search_result = client.search(
+        collection_name='products',
+        query_vector=genai.embed_content(
+            model="models/embedding-001",
+            content=search_term,
+            task_type="retrieval_query",
+        )["embedding"],
+    )
 
-        # Extract payload texts from search results
-        filtered_texts = [result.payload["text"] for result in search_result]
-
-        # Retrieve the actual product objects using the filtered texts with the order
-        for text in filtered_texts:
-            for product in products:
-                name = product["name"]
-                description = product["description"]
-                image_captions = product["image_captions"]
-                product_text = f"{name} {description} {image_captions}"
-                product_text = product_text.replace("-", "").strip()
-
-                if product_text == text:
-                    filtered_products.append(product)
-                    break
-
-    return filtered_products
-
-
-# Search products using semantic search
-def search_products_semantic(search_term, k=5):
-    # Load a pre-trained sentence transformer model
-    model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-
-    # Encode the search term
-    search_term_embedding = model.encode([search_term])[0]
+    # Extract payload texts from search results
+    filtered_texts = [result.payload["text"] for result in search_result]
 
     products = load_products()
-    product_texts = [f"{p['name']} {p['description']} {p['image_captions']}" for p in products]
-    product_embeddings = model.encode(product_texts)
+    filtered_products = []
 
-    # Compute cosine similarities
-    similarities = torch.nn.functional.cosine_similarity(torch.tensor(product_embeddings), torch.tensor(search_term_embedding).unsqueeze(0))
+    # Retrieve the actual product objects using the filtered texts
+    for text in filtered_texts:
+        for product in products:
+            name = product["name"]
+            description = product["description"]
+            image_captions = product["image_captions"]
+            product_text = f"{name} {description} {image_captions}"
+            product_text = product_text.replace("-", "").strip()
 
-    # Sort products by similarity and select top k
-    sorted_indices = torch.argsort(similarities, descending=True)
-    sorted_products = [products[idx] for idx in sorted_indices]
-    sorted_similarities = similarities[sorted_indices]
+            if product_text == text:
+                filtered_products.append(product)
+                break
 
-    # Display search term and similarity chart
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.bar(range(len(sorted_products)), sorted_similarities.tolist())
-    ax.set_xticks(range(len(sorted_products)))
-    ax.set_xticklabels([f"{p['name'][:20]}..." for p in sorted_products], rotation=45, ha='right')
-    ax.set_xlabel("Products")
-    ax.set_ylabel("Similarity")
-    st.pyplot(fig)
-
-    filtered_products = [products[idx] for idx in sorted_indices[:k]]
-
-    return filtered_products
-
+    return filtered_products[:k]
 
 # Display product card
 def display_product_card(product, is_main=True, is_grid=False):
@@ -276,28 +192,6 @@ def display_product_details(product):
     if product['price']:
         st.write(f"Price: ${product['price']:.2f}")
     st.write(f"Description: {product['description']}")
-
-    # Similar Products
-    st.subheader("Similar Products")
-    search_term = f"{product['name']} {product['description']} {product['image_captions']}"
-    similar_products = search_products_semantic(search_term, k=5)
-    for similar_product in similar_products:
-        if similar_product["id"] != product["id"]:
-            display_product_card(similar_product, is_main=False)
-
-# Generate search tag from image
-def generate_search_tag(image):
-    try:
-        prompt = [
-            "List relevant search tags for the given image, separated by commas, including product category, brand, model, specifications, colors, patterns, materials, and distinctive features, considering multiple products if present.",
-            image,
-        ]
-        response = model_vision.generate_content(prompt)
-        search_tag = response.text.strip()
-        return search_tag
-    except Exception as e:
-        st.error(f"Error generating search tag: {str(e)}")
-        return None
 
 # Add product form
 def add_product_form():
@@ -348,30 +242,12 @@ def main():
 
     # Search Section
     search_term = st.text_input("Search Products")
-    search_image = st.file_uploader("Search by Image", type=["jpg", "png", "jpeg"])
     k_value = st.number_input("Number of results", min_value=1, value=5, step=1)
     search_button = st.button("Search")
-    search_method = st.radio("Search Method", ["Semantic Search", "Search by Image", "FAISS Similarity Search","Qdrant Search"])
     view_mode = st.radio("View Mode", ["Grid", "List"], index=1)
 
     if search_button:
-        if search_method == "FAISS Similarity Search":
-            search_results = search_products_faiss(search_term, k=k_value)
-        elif search_method == "Semantic Search":
-            search_results = search_products_semantic(search_term, k=k_value)
-        elif search_method == "Search by Image":
-            if search_image:
-                image = Image.open(search_image)
-                search_tag = generate_search_tag(image)
-                if search_tag:
-                    search_results = search_products_semantic(search_tag, k=k_value)
-                else:
-                    search_results = []
-            else:
-                st.warning("Please upload an image to search.")
-                search_results = []
-        elif search_method == "Qdrant Search":
-            search_results = search_products_qdrant(search_term, k=k_value)
+        search_results = search_products_qdrant(search_term, k=k_value)
 
         if search_results:
             if view_mode == "Grid":
