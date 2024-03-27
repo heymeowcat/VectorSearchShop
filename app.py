@@ -1,3 +1,4 @@
+import io
 import os
 from dotenv import load_dotenv
 import streamlit as st
@@ -94,6 +95,7 @@ def update_vector_store():
 
     if products:
         texts = []
+        images = []
 
         for product in products:
             name = product["name"]
@@ -103,8 +105,13 @@ def update_vector_store():
             product_text = product_text.replace("-", "").strip()
             texts.append(product_text)
 
+            # Resize or compress the image
+            image = product["image"]
+            resized_image = image.resize((224, 224))  # Resize the image to 224x224 pixels
+            images.append(image)
+
         # Embed all product texts
-        results = [
+        text_results = [
             genai.embed_content(
                 model="models/embedding-001",
                 content=sentence,
@@ -114,39 +121,66 @@ def update_vector_store():
             for sentence in texts
         ]
 
-        # Upsert all product texts into Qdrant
+        # Embed all product images
+        image_results = [
+            genai.embed_content(
+                model="models/embedding-001",
+                content=image,
+                task_type="retrieval_document",
+                title="Qdrant x Gemini",
+            )
+            for image in images
+        ]
+
+        # Upsert all product texts and images into Qdrant
         client.upsert(
             collection_name="products",
             points=[
                 PointStruct(
                     id=idx,
-                    vector=response["embedding"],
-                    payload={"text": text},
+                    vector=result["embedding"],
+                    payload={"text": text, "image_embedding": image_result["embedding"]},
                 )
-                for idx, (response, text) in enumerate(zip(results, texts))
+                for idx, (result, text, image_result) in enumerate(zip(text_results, texts, image_results))
             ],
         )
 
 # Search products using Qdrant
-def search_products_qdrant(search_term, k=5):
-    # Search within all product texts
+def search_products_qdrant(search_term, search_image=None, k=5):
+    # Search within all product texts and images
+    text_query_vector = genai.embed_content(
+        model="models/embedding-001",
+        content=search_term,
+        task_type="retrieval_query",
+    )["embedding"]
+
     search_result = client.search(
         collection_name='products',
-        query_vector=genai.embed_content(
-            model="models/embedding-001",
-            content=search_term,
-            task_type="retrieval_query",
-        )["embedding"],
+        query_vector=text_query_vector,
     )
 
+    if search_image:
+        image_query_vector = genai.embed_content(
+            model="models/retrieve-vision-001",
+            content=search_image,
+            task_type="retrieval_query",
+        )["embedding"]
+
+        image_search_result = client.search(
+            collection_name='products',
+            query_vector=image_query_vector,
+        )
+
+        search_result = [*search_result, *image_search_result]
+
     # Extract payload texts and scores from search results
-    filtered_texts = [(result.payload["text"], result.score) for result in search_result]
+    filtered_texts = [(result.payload["text"], result.score, result.payload["image_embedding"]) for result in search_result]
 
     products = load_products()
     filtered_products = []
 
     # Retrieve the actual product objects using the filtered texts and scores
-    for text, score in filtered_texts:
+    for text, score, image_embedding in filtered_texts:
         for product in products:
             name = product["name"]
             description = product["description"]
@@ -155,20 +189,23 @@ def search_products_qdrant(search_term, k=5):
             product_text = product_text.replace("-", "").strip()
 
             if product_text == text:
-                filtered_products.append((product, score))
+                filtered_products.append((product, score, image_embedding))
                 break
 
     return filtered_products[:k]
 
 # Display product card
-def display_product_card(product, score, is_main=True, is_grid=False):
+def display_product_card(product, score, image_score=None, is_main=True, is_grid=False):
     if is_grid:
         st.image(product["image"], use_column_width=True)
         st.subheader(product["name"])
         if product['price']:
             st.write(f"Price: ${product['price']:.2f}")
         st.progress(score)
-        st.text(f"Score: {score:.2f}")
+        st.text(f"Text Score: {score:.2f}")
+        if image_score is not None:
+            st.progress(image_score)
+            st.text(f"Image Score: {image_score:.2f}")
     else:
         col1, col2 = st.columns([1, 2])
         with col1:
@@ -182,7 +219,10 @@ def display_product_card(product, score, is_main=True, is_grid=False):
                 description = f"{description[:100]}..."
             st.write(f"Description: {description}")
             st.progress(score)
-            st.text(f"Score: {score:.2f}")
+            st.text(f"Text Score: {score:.2f}")
+            if image_score is not None:
+                st.progress(image_score)
+                st.text(f"Image Score: {image_score:.2f}")
 
     key_prefix = "main_product" if is_main else "similar_product"
     view_details_button = st.button("View Details", key=f"{key_prefix}_{product['id']}")
@@ -246,22 +286,27 @@ def main():
 
     # Search Section
     search_term = st.text_input("Search Products")
+    search_image = st.file_uploader("Search by Image", type=["jpg", "png", "jpeg"])
     k_value = st.number_input("Number of results", min_value=1, value=5, step=1)
     search_button = st.button("Search")
+    update_vector_button = st.button("Update the vector store manually")
+
     view_mode = st.radio("View Mode", ["Grid", "List"], index=1)
+    if update_vector_button:
+        update_vector_store()
 
     if search_button:
-        search_results = search_products_qdrant(search_term, k=k_value)
+        search_results = search_products_qdrant(search_term, search_image=search_image, k=k_value)
 
         if search_results:
             if view_mode == "Grid":
                 cols = st.columns(3)
-                for i, (product, score) in enumerate(search_results):
+                for i, (product, text_score, image_score) in enumerate(search_results):
                     with cols[i % 3]:
-                        display_product_card(product, score, is_main=True, is_grid=True)
+                        display_product_card(product, text_score, image_score, is_main=True, is_grid=True)
             else:
-                for product, score in search_results:
-                    display_product_card(product, score, is_main=True)
+                for product, text_score, image_score in search_results:
+                    display_product_card(product, text_score, image_score, is_main=True)
         else:
             st.warning("No products found.")
     else:
