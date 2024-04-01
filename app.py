@@ -10,6 +10,9 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
 from qdrant_client.http.models import Distance, PointStruct, VectorParams
+import torch
+from typing import List, Optional
+from sentence_transformers import SentenceTransformer, util
 
 load_dotenv()
 try:
@@ -30,9 +33,9 @@ if not client.collection_exists(collection_name):
         collection_name=collection_name,
         vectors_config=VectorParams(size=768, distance=Distance.COSINE),
     )
-else:
-    print("Collection already exists. Skipping creation.")
 
+
+model = SentenceTransformer("clip-ViT-B-32")
 
 # Connect to SQLite database
 conn = sqlite3.connect("products.db")
@@ -92,12 +95,22 @@ def add_product(name, description, price, image):
     conn.commit()
     update_vector_store()
 
+# Image Embedding
+def calculate_embedding(img_bytes) -> Optional[List[float]]:
+    try:
+        embedding = model.encode(img_bytes).tolist()
+        return embedding
+    except Exception as e:
+        st.error(f"Error calculating embedding for image: {e}")
+        return None 
+
 # Update the vector store with the new product data
 def update_vector_store():
     products = load_products()
 
     if products:
         texts = []
+        image_embeddings = []
 
         for product in products:
             name = product["name"]
@@ -106,6 +119,11 @@ def update_vector_store():
             product_text = f"{name} {description} {image_captions}"
             product_text = product_text.replace("-", "").strip()
             texts.append(product_text)
+
+            # Extract image embedding
+            image = product["image"] 
+            image_embedding = calculate_embedding(image)
+            image_embeddings.append(image_embedding)
 
         # Embed all product texts
         results = [
@@ -118,16 +136,18 @@ def update_vector_store():
             for sentence in texts
         ]
 
-        # Upsert all product texts into Qdrant
+        # Upsert all product texts and image embeddings into Qdrant
         client.upsert(
             collection_name="products",
             points=[
                 PointStruct(
                     id=idx,
-                    vector=response["embedding"],
-                    payload={"text": text},
+                    vector=result["embedding"],
+                    payload={"text": text, "image_embedding": image_embedding},
                 )
-                for idx, (response, text) in enumerate(zip(results, texts))
+                for idx, (result, text, image_embedding) in enumerate(
+                    zip(results, texts, image_embeddings)
+                )
             ],
         )
 
@@ -219,7 +239,7 @@ def add_product_form():
                 try:
                     with st.spinner("Generating description..."):
                         prompt_parts_vision = [
-                            "Generate a Item description for the Item for a oneline store in very few words",
+                            "Generate a Item description for the Item for a oneline store in very few words in one line",
                             image,]
                         response = model_vision.generate_content(prompt_parts_vision)
                         generated_description = response.text
@@ -255,7 +275,11 @@ def main():
     search_term = st.text_input("Search Products")
     k_value = st.number_input("Number of results", min_value=1, value=5, step=1)
     search_button = st.button("Search")
+    update_vector_store_button = st.button("Update Vector Store manually")
     view_mode = st.radio("View Mode", ["Grid", "List"], index=1)
+
+    if update_vector_store_button:
+        update_vector_store()
 
     if search_button:
         search_results = search_products_qdrant(search_term, k=k_value)
