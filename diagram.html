@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>App Diagram</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  </head>
+
+  <body>
+    <div class="mermaid">
+      sequenceDiagram
+        participant User
+        participant App
+        participant NeuralEncoder
+        participant Qdrant
+        participant Database
+    
+        User->>App: Search query
+        App->>NeuralEncoder: Encode query
+        NeuralEncoder-->>App: Query embedding
+        App->>Qdrant: Search with query embedding
+        Qdrant-->>App: Search results
+        App->>Database: Load products
+        Database-->>App: Product data
+        App-->>User: Display search results
+    
+        User->>App: View product details
+        App->>NeuralEncoder: Encode product image
+        NeuralEncoder-->>App: Image embedding
+        App->>Qdrant: Search for similar products
+        Qdrant-->>App: Similar products
+        App-->>User: Display similar products
+    </div>
+    <script>
+      mermaid.initialize({
+        startOnLoad: true,
+        theme: "default",
+      });
+    </script>
+  </body>
+</html>
