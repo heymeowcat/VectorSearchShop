@@ -10,9 +10,9 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
 from qdrant_client.http.models import Distance, PointStruct, VectorParams
-import torch
+
 from typing import List, Optional
-from sentence_transformers import SentenceTransformer, util
+from sentence_transformers import SentenceTransformer
 
 load_dotenv()
 try:
@@ -32,10 +32,10 @@ if not client.collection_exists(collection_name):
     client.recreate_collection(
         collection_name=collection_name,
         vectors_config=VectorParams(size=768, distance=Distance.COSINE),
-    )
+    )   
 
 
-model = SentenceTransformer("clip-ViT-B-32")
+model = SentenceTransformer("clip-ViT-L-14")
 
 # Connect to SQLite database
 conn = sqlite3.connect("products.db")
@@ -185,28 +185,20 @@ def search_products_qdrant(search_term, k=5):
     return filtered_products[:k]
 
 # Display product card
-def display_product_card(product, score, is_main=True, is_grid=False):
-    if is_grid:
+def display_product_card(product, score, is_main=True):
+    col1, col2 = st.columns([1, 2])
+    with col1:
         st.image(product["image"], use_column_width=True)
+    with col2:
         st.subheader(product["name"])
         if product['price']:
             st.write(f"Price: ${product['price']:.2f}")
+        description = product["description"]
+        if len(description) > 100:
+            description = f"{description[:100]}..."
+        st.write(f"Description: {description}")
         st.progress(score)
         st.text(f"Score: {score:.2f}")
-    else:
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.image(product["image"], use_column_width=True)
-        with col2:
-            st.subheader(product["name"])
-            if product['price']:
-                st.write(f"Price: ${product['price']:.2f}")
-            description = product["description"]
-            if len(description) > 100:
-                description = f"{description[:100]}..."
-            st.write(f"Description: {description}")
-            st.progress(score)
-            st.text(f"Score: {score:.2f}")
 
     key_prefix = "main_product" if is_main else "similar_product"
     view_details_button = st.button("View Details", key=f"{key_prefix}_{product['id']}")
@@ -219,7 +211,34 @@ def display_product_details(product):
     st.image(product["image"], use_column_width=True)
     if product['price']:
         st.write(f"Price: ${product['price']:.2f}")
-    st.write(f"Description: {product['description']}")
+        st.write(f"Description: {product['description']}")
+
+    # Find similar products
+    query_image = product["image"]
+    query_embedding = model.encode(query_image).tolist()
+    results = client.search(
+        collection_name="products",
+        query_vector=query_embedding,
+        with_payload=True,
+        limit=5,
+    )
+
+    # Display similar products
+    st.subheader("Similar Products")
+    similar_products = []
+    for result in results:
+        payload = result.payload
+        for other_product in load_products():
+            if payload["text"] == f"{other_product['name']} {other_product['description']} {other_product['image_captions']}".replace("-", "").strip():
+                similar_products.append((other_product, result.score))
+                break
+
+    if similar_products:
+        for similar_product, score in similar_products:
+            if similar_product["id"] != product["id"]:
+                display_product_card(similar_product, score, is_main=False)
+    else:
+        st.write("No similar products found.")
 
 # Add product form
 def add_product_form():
@@ -259,11 +278,6 @@ def add_product_form():
             else:
                 st.error("Please fill in all fields and upload an image.")
 
-def display_products_grid(products):
-    cols = st.columns(3)
-    for i, product in enumerate(products):
-        with cols[i % 3]:
-            display_product_card(product, is_main=True, is_grid=True)
 
 def main():
     st.set_page_config(
@@ -276,7 +290,6 @@ def main():
     k_value = st.number_input("Number of results", min_value=1, value=5, step=1)
     search_button = st.button("Search")
     update_vector_store_button = st.button("Update Vector Store manually")
-    view_mode = st.radio("View Mode", ["Grid", "List"], index=1)
 
     if update_vector_store_button:
         update_vector_store()
@@ -285,26 +298,14 @@ def main():
         search_results = search_products_qdrant(search_term, k=k_value)
 
         if search_results:
-            if view_mode == "Grid":
-                cols = st.columns(3)
-                for i, (product, score) in enumerate(search_results):
-                    with cols[i % 3]:
-                        display_product_card(product, score, is_main=True, is_grid=True)
-            else:
-                for product, score in search_results:
-                    display_product_card(product, score, is_main=True)
+            for product, score in search_results:
+                display_product_card(product, score, is_main=True)
         else:
             st.warning("No products found.")
     else:
         products = load_products()
-        if view_mode == "Grid":
-            cols = st.columns(3)
-            for i, product in enumerate(products):
-                with cols[i % 3]:
-                    display_product_card(product, 1.0, is_main=True, is_grid=True)
-        else:
-            for product in products:
-                display_product_card(product, 1.0, is_main=True)
+        for product in products:
+            display_product_card(product, 1.0, is_main=True)
 
     add_product_form()
 
