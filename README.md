@@ -59,15 +59,15 @@ This app allows users to search for products by either entering text or uploadin
 
 ### **Features**
 
-- **Text-based Search**: Users can search for products by entering a text query, and the app will retrieve relevant products based on their names and descriptions using a vector similarity search.
+- **Text-based Search**: Users can search for products by entering a text query, and the app will retrieve relevant products based on their names, descriptions, and image captions using a vector similarity search.
 
-- **Image-based Search**: Users can search for products by uploading an image, and the app will retrieve the most similar products based on their image embeddings using a pre-trained image-to-image similarity model.
+- **View Similar Products**: Users can view similar products to a specific product based on image embeddings, allowing for visual similarity search.
 
-- **Add Products**: Users can add new products to the database by uploading an image, providing a name and description, and optionally generating a description using the Gemini Pro Vision model.
+- **Add Products**: Users can add new products to the database by uploading an image, providing a name, description, and price, and optionally generating a description using the Gemini Pro Vision model.
 
-- **Display Products**: The app displays the retrieved products in a grid layout, showing the product image, name, and description.
+- **Display Products**: The app displays the retrieved products in a grid or list layout, showing the product image, name, description, price, and similarity score.
 
-- **Search Term and Similarity Chart**: For semantic searches, the app displays the search term and a bar chart showing the similarity scores of the top retrieved products.
+- **View Product Details**: Users can view detailed information about a product, including the image, name, description, price, and similar products based on image embeddings.
 
 ### **Implementation Details**
 
@@ -75,24 +75,27 @@ The app uses the following key components and libraries:
 
 - **Streamlit**: A Python library for building interactive web applications.
 - **SQLite**: A lightweight, file-based database for storing product data.
-- **LangChain**: A framework for building applications with large language models, used for text-based vector similarity search and generating product descriptions.
+- **Qdrant**: A vector similarity search engine used for storing and searching product data and embeddings.
 - **Google Generative AI API**: The Gemini Pro Vision model is used for generating product descriptions from images.
-- **Sentence Transformers**: A library for generating high-quality sentence embeddings, used for semantic similarity search.
+- **Sentence Transformers**: A library for generating high-quality sentence embeddings, used for encoding product texts and images.
+
+### **App Flow Diagram**
+
+![vectorsearchshopmermaid](https://github.com/heymeowcat/VectorSearchShop/assets/40495273/78d022dc-f13a-42ec-ad55-df3f4a6e7767)
+
 
 The application flow is as follows:
 
-1. Users can search for products by entering a text query or uploading an image.
+1. Users can search for products by entering a text query.
 
-2. For text-based searches, the app generates text embeddings using the `GoogleGenerativeAIEmbeddings` from LangChain and performs a similarity search on the product data using a FAISS vector store.
+2. The app generates text embeddings using the `GoogleGenerativeAIEmbeddings` from the Google Generative AI API and performs a similarity search on the product data stored in Qdrant.
 
-3. For semantic searches, the app uses the `sentence-transformers` library to generate embeddings for the search term and product texts, computes the cosine similarities, and retrieves the top relevant products.
+3. The retrieved products are displayed in a grid or list layout, showing the product image, name, description, price, and similarity score.
 
-4. For image-based searches, the app generates image search tags using the Gemini Pro Vision model. It then performs a similarity search using the generated image captions and the FAISS vector store.
+4. Users can view detailed information about a product, including the image, name, description, price, and similar products based on image embeddings.
 
-5. The retrieved products are displayed in a grid layout, showing the product image, name, and description.
+5. For displaying similar products, the app generates image embeddings using the `clip-ViT-L-14` model from the `sentence-transformers` library and performs a similarity search on the image embeddings stored in Qdrant.
 
-6. For semantic searches, the app displays the search term and a bar chart showing the similarity scores of the top retrieved products.
+6. Users can add new products by uploading an image, providing a name, description, and price, and optionally generating a description using the Gemini Pro Vision model.
 
-7. Users can add new products by uploading an image, providing a name and description, and optionally generating a description using the Gemini Pro Vision model.
-
-The app stores product data, including images, names, descriptions, and their respective embeddings, in an SQLite database for persistence.
+The app stores product data, including images, names, descriptions, prices, and their respective text and image embeddings, in an SQLite database for persistence. The Qdrant vector store is used for efficient similarity search and retrieval of products based on text and image embeddings.
