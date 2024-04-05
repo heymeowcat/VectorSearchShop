@@ -31,7 +31,7 @@ collection_name = "products"
 if not client.collection_exists(collection_name):
     client.recreate_collection(
         collection_name=collection_name,
-        vectors_config=VectorParams(size=768, distance=Distance.COSINE),
+        vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
     )   
 
 
@@ -142,7 +142,7 @@ def update_vector_store():
             points=[
                 PointStruct(
                     id=idx,
-                    vector=result["embedding"],
+                    vector=list(result["embedding"]) + list(image_embedding),
                     payload={"text": text, "image_embedding": image_embedding},
                 )
                 for idx, (result, text, image_embedding) in enumerate(
@@ -153,17 +153,19 @@ def update_vector_store():
 
 # Search products using Qdrant
 def search_products_qdrant(search_term, k=5):
-    # Search within all product texts
+    # Generate text embedding for the search term
+    query_text_embedding = genai.embed_content(
+        model="models/embedding-001",
+        content=search_term,
+        task_type="retrieval_query",
+    )["embedding"]
+
+    padded_query_vector = query_text_embedding + [0.0] * 768 
     search_result = client.search(
         collection_name='products',
-        query_vector=genai.embed_content(
-            model="models/embedding-001",
-            content=search_term,
-            task_type="retrieval_query",
-        )["embedding"],
+        query_vector=padded_query_vector,
     )
-
-    # Extract payload texts and scores from search results
+    
     filtered_texts = [(result.payload["text"], result.score) for result in search_result]
 
     products = load_products()
@@ -215,7 +217,7 @@ def display_product_details(product):
 
     # Find similar products
     query_image = product["image"]
-    query_embedding = model.encode(query_image).tolist()
+    query_embedding =  [0.0] * 768 + model.encode(query_image).tolist()
     results = client.search(
         collection_name="products",
         query_vector=query_embedding,
