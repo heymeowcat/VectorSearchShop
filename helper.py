@@ -8,6 +8,8 @@ from qdrant_client import QdrantClient
 from qdrant_client.http.models import PointStruct
 from img2vec_pytorch import Img2Vec
 import google.generativeai as genai
+import requests
+from io import BytesIO
 
 load_dotenv()
 try:
@@ -38,7 +40,7 @@ class QdrantHelper:
             task_type="retrieval_query",
         )["embedding"]
 
-        padded_query_vector = query_text_embedding + [0.0] * 512 
+        padded_query_vector = query_text_embedding + [0] * 512 
         search_result = self.client.search(
             collection_name='products',
             query_vector=padded_query_vector,
@@ -48,7 +50,6 @@ class QdrantHelper:
 
         filtered_products = []
 
-        # Retrieve the actual product objects using the filtered texts and scores
         for text, score in filtered_texts:
             for product in products:
                 name = product["name"]
@@ -64,9 +65,12 @@ class QdrantHelper:
         return filtered_products[:k]
 
 
-    def find_similar_items_by_image(self, query: Image.Image, num_results: int = conf.NUM_RESULTS) -> List[PointStruct]:
-            # query_embedding =  [0.0] * 768 + model.encode(query_image).tolist()
-            query_embedding = self.img2vec.get_vec(query.convert('RGB')).tolist()
+    def find_similar_items_by_image(self, query_image_url: str, num_results: int = conf.NUM_RESULTS) -> List[PointStruct]:
+        try:
+            response = requests.get(query_image_url)
+            response.raise_for_status()
+            query_image = Image.open(BytesIO(response.content))
+            query_embedding = self.img2vec.get_vec(query_image.convert('RGB')).tolist()
             padded_vector = [0.0] * 768 + query_embedding
             results = self.client.search(
                 collection_name=self.collection_name,
@@ -78,11 +82,17 @@ class QdrantHelper:
             filtered_results = [r for r in results if "image_embedding" in r.payload]
 
             return filtered_results
+        except (requests.exceptions.RequestException):
+            return []
 
-
-    def embed_image(self, image: Image.Image) -> List[float]:
-        # embedding = self.image_model.encode(img_bytes).tolist()
-        return self.img2vec.get_vec(image, tensor=False).tolist()
+    def embed_image(self, image_url: str) -> List[float]:
+        try:
+            response = requests.get(image_url)
+            response.raise_for_status()
+            image = Image.open(BytesIO(response.content))
+            return self.img2vec.get_vec(image, tensor=False).tolist()
+        except (requests.exceptions.RequestException):
+            return []
 
     def update_vector_store(self, products):
         if products:
@@ -97,12 +107,10 @@ class QdrantHelper:
                 product_text = product_text.replace("-", "").strip()
                 texts.append(product_text)
 
-                # Extract image embedding
-                image = product["image"] 
-                image_embedding = self.embed_image(image)
+                image_url = product["image_url"]
+                image_embedding = self.embed_image(image_url)
                 image_embeddings.append(image_embedding)
 
-            # Embed all product texts
             results = [
                 genai.embed_content(
                     model="models/embedding-001",
@@ -113,7 +121,6 @@ class QdrantHelper:
                 for sentence in texts
             ]
 
-            # Upsert all product texts and image embeddings into Qdrant
             self.client.upsert(
                 collection_name="products",
                 points=[
@@ -127,5 +134,33 @@ class QdrantHelper:
                     )
                 ],
             )
+    def add_product_to_vector_store(self, product):
+        name = product["name"]
+        description = product["description"]
+        image_captions = product["image_captions"]
+        product_text = f"{name} {description} {image_captions}"
+        product_text = product_text.replace("-", "").strip()
 
-    
+        # Extract image embedding
+        image_url = product["image_url"]
+        image_embedding = self.embed_image(image_url)
+
+        # Embed the product text
+        result = genai.embed_content(
+            model="models/embedding-001",
+            content=product_text,
+            task_type="retrieval_document",
+            title="Qdrant x Gemini",
+        )
+
+        # Upsert the product text and image embedding into Qdrant
+        self.client.upsert(
+            collection_name="products",
+            points=[
+                PointStruct(
+                    id=product["id"],
+                    vector=list(result["embedding"]) + list(image_embedding),
+                    payload={"text": product_text, "image_embedding": image_embedding},
+                )
+            ],
+        )
