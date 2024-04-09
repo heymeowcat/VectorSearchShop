@@ -1,4 +1,5 @@
 import csv
+from io import BytesIO
 from PIL import Image
 import os
 from dotenv import load_dotenv
@@ -41,16 +42,7 @@ num_beams = 4
 gen_kwargs = {"max_length": max_length, "num_beams": num_beams}
 
 def predict_step(image_path):
-    try:
-        i_image = Image.open(image_path)
-        if i_image.mode != "RGB":
-            i_image = i_image.convert(mode="RGB")
-
-        images = [i_image]
-    except (IOError, OSError) as e:
-        print(f"Error opening image {image_path}: {e}")
-        return None
-
+    images = [image_path.convert('RGB')]
     pixel_values = feature_extractor(images=images, return_tensors="pt").pixel_values
     pixel_values = pixel_values.to(device)
 
@@ -80,9 +72,10 @@ def generate_image_captions(image, useVisionEncoderState):
     try:
         image_captions = None
         if useVisionEncoderState:
-            if isinstance(image, str):
-                image = image.rstrip('\x00')
-            image_captions = predict_step(image)
+            response = requests.get(image)
+            response.raise_for_status()
+            query_image = Image.open(BytesIO(response.content))
+            image_captions = predict_step(query_image)
         else:
             prompt = [
                 "List up to 15 relevant search tags for the given image, separated by commas, including product category, brand, colors, patterns, materials, and distinctive features, considering multiple products if present.",

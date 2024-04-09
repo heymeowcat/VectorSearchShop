@@ -46,27 +46,28 @@ def download_image(image_url):
 
 # Display product card
 def display_product_card(product, score, is_main=True):
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        image = download_image(product["image_url"])
-        if image:
-            st.image(image, use_column_width=True)
-        else:
-            st.warning("Failed to load image.")
-    with col2:
-        st.subheader(product["name"])
-        if product['price']:
-            st.write(f"Price: {product['price']}")
-        description = product["description"]
-        if len(description) > 100:
-            description = f"{description[:100]}..."
-        st.write(f"Description: {description}")
-        st.progress(score)
-        st.text(f"Score: {score:.2f}")
-    key_prefix = "main_product" if is_main else "similar_product"
-    view_details_button = st.button("View Details", key=f"{key_prefix}_{product['id']}")
-    if view_details_button:
-        display_product_details(product)
+    with st.container(border=1):
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            image = download_image(product["image_url"])
+            if image:
+                st.image(image, use_column_width=True)
+            else:
+                st.warning("Failed to load image.")
+        with col2:
+            st.subheader(product["name"])
+            if product['price']:
+                st.write(f"Price: {product['price']}")
+            description = product["description"]
+            if len(description) > 100:
+                description = f"{description[:100]}..."
+            st.write(f"Description: {description}")
+            st.progress(score)
+            st.text(f"Score: {score:.2f}")
+        key_prefix = "main_product" if is_main else "similar_product"
+        view_details_button = st.button("View Details", key=f"{key_prefix}_{product['id']}")
+        if view_details_button:
+            display_product_details(product)
 
 # Display product details modal/page
 def display_product_details(product):
@@ -103,30 +104,51 @@ def find_similar_products(product):
 
 def main():
     st.set_page_config(
-        page_title="VectorSearchShop"
+        page_title="VectorSearchShop",
+        page_icon=":shopping_cart:",
+        layout="wide"
     )
-    st.title("Product Shop")
+
+    st.title("Vector Search Shop")
 
     # Search Section
-    search_term = st.text_input("Search Products")
-    k_value = st.number_input("Number of results", min_value=1, value=5, step=1)
-    search_button = st.button("Search")
+    with st.container():
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            search_term = st.text_input("Search Products")
+        with col2:
+            uploaded_image = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
+
+        search_button = st.button("Search")
 
     products = load_products()
     if len(products) == 0:
         st.warning("No products found.")
 
     if search_button:
-        search_results = qdrant_helper.find_similar_items_by_text(products, search_term, k=k_value)
+        if uploaded_image:
+            search_results = qdrant_helper.find_similar_items_by_image(uploaded_image, 5)
+        else:
+            search_results = qdrant_helper.find_similar_items_by_text(products, search_term, k=5)
         if search_results:
-            for product, score in search_results:
-                display_product_card(product, score, is_main=True)
+            with st.container():
+                st.write("Search Results:")
+                with st.container():
+                    product_grid = st.columns(3)
+                    for i, (product, score) in enumerate(search_results):
+                        with product_grid[i % 3]:
+                            display_product_card(product, score, is_main=True)
         else:
             st.warning("No products found.")
     else:
         st.write(f"Total Products Count: {count}")
-        for product in products:
-            display_product_card(product, 1.0, is_main=True)
+        with st.container():
+            st.write("All Products:")
+            with st.container():
+                product_grid = st.columns(3)
+                for i, product in enumerate(products):
+                    with product_grid[i % 3]:
+                        display_product_card(product, 1.0, is_main=True)
 
 
 if __name__ == "__main__":

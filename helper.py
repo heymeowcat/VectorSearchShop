@@ -1,5 +1,5 @@
 import os
-from typing import List, Union
+from typing import List
 from PIL import Image
 from dotenv import load_dotenv
 import conf
@@ -94,52 +94,54 @@ class QdrantHelper:
         except (requests.exceptions.RequestException):
             return []
 
-    def update_vector_store(self, products):
-        if products:
-            texts = []
-            image_embeddings = []
+    # def update_vector_store(self, products):
+    #     if products:
+    #         texts = []
+    #         image_embeddings = []
 
-            for product in products:
-                name = product["name"]
-                description = product["description"]
-                image_captions = product["image_captions"]
-                product_text = f"{name} {description} {image_captions}"
-                product_text = product_text.replace("-", "").strip()
-                texts.append(product_text)
+    #         for product in products:
+    #             name = product["name"]
+    #             description = product["description"]
+    #             image_captions = product["image_captions"]
+    #             product_text = f"{name} {description} {image_captions}"
+    #             product_text = product_text.replace("-", "").strip()
+    #             texts.append(product_text)
 
-                image_url = product["image_url"]
-                image_embedding = self.embed_image(image_url)
-                image_embeddings.append(image_embedding)
+    #             image_url = product["image_url"]
+    #             image_embedding = self.embed_image(image_url)
+    #             image_embeddings.append(image_embedding)
 
-            results = [
-                genai.embed_content(
-                    model="models/embedding-001",
-                    content=sentence,
-                    task_type="retrieval_document",
-                    title="Qdrant x Gemini",
-                )
-                for sentence in texts
-            ]
+    #         results = [
+    #             genai.embed_content(
+    #                 model="models/embedding-001",
+    #                 content=sentence,
+    #                 task_type="retrieval_document",
+    #                 title="Qdrant x Gemini",
+    #             )
+    #             for sentence in texts
+    #         ]
 
-            self.client.upsert(
-                collection_name="products",
-                points=[
-                    PointStruct(
-                        id=idx,
-                        vector=list(result["embedding"]) + list(image_embedding),
-                        payload={"text": text, "image_embedding": image_embedding},
-                    )
-                    for idx, (result, text, image_embedding) in enumerate(
-                        zip(results, texts, image_embeddings)
-                    )
-                ],
-            )
+    #         self.client.upsert(
+    #             collection_name="products",
+    #             points=[
+    #                 PointStruct(
+    #                     id=idx,
+    #                     vector=list(result["embedding"]) + list(image_embedding),
+    #                     payload={"text": text, "image_embedding": image_embedding},
+    #                 )
+    #                 for idx, (result, text, image_embedding) in enumerate(
+    #                     zip(results, texts, image_embeddings)
+    #                 )
+    #             ],
+    #         )
+
     def add_product_to_vector_store(self, product):
         name = product["name"]
         description = product["description"]
         image_captions = product["image_captions"]
         product_text = f"{name} {description} {image_captions}"
         product_text = product_text.replace("-", "").strip()
+        
 
         # Extract image embedding
         image_url = product["image_url"]
@@ -159,8 +161,8 @@ class QdrantHelper:
             points=[
                 PointStruct(
                     id=product["id"],
-                    vector=list(result["embedding"]) + list(image_embedding),
-                    payload={"text": product_text, "image_embedding": image_embedding},
+                    vector=result["embedding"] + image_embedding,
+                    payload={"text": product_text, "text_embedding":result["embedding"], "image_embedding": image_embedding},
                 )
             ],
         )
