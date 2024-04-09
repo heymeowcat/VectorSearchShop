@@ -100,7 +100,7 @@ def find_similar_products(product):
                 display_product_card(similar_product, score, is_main=False)
     else:
         st.write("No similar products found.")
-    st.divider()
+
 
 def main():
     st.set_page_config(
@@ -129,17 +129,25 @@ def main():
         if uploaded_image:
             search_results = qdrant_helper.find_similar_items_by_image(uploaded_image, 5)
         else:
-            search_results = qdrant_helper.find_similar_items_by_text(products, search_term, k=5)
+            search_results = qdrant_helper.find_similar_items_by_text(search_term, 5)
         if search_results:
             with st.container():
                 st.write("Search Results:")
                 with st.container():
-                    product_grid = st.columns(3)
-                    for i, (product, score) in enumerate(search_results):
-                        with product_grid[i % 3]:
-                            display_product_card(product, score, is_main=True)
-        else:
-            st.warning("No products found.")
+                    search_result_products = []
+                    for result in search_results:
+                        for other_product in load_products():
+                            if f"{other_product['name']} {other_product['description']} {other_product['image_captions']}".replace("-", "").strip() == result.payload["text"]:
+                                search_result_products.append((other_product, result.score))
+                                break
+
+                    if search_result_products:
+                        product_grid = st.columns(3)
+                        for i, (product, score) in enumerate(search_result_products):
+                            with product_grid[i % 3]:
+                                display_product_card(product, score, is_main=True)
+                    else:
+                        st.warning("No products found.")
     else:
         st.write(f"Total Products Count: {count}")
         with st.container():

@@ -32,38 +32,26 @@ class QdrantHelper:
                 vectors_config={"size": conf.VECTOR_SIZE, "distance": "Cosine"},
             )
 
-    def find_similar_items_by_text(self, products, search_term, k=conf.NUM_RESULTS):
-        # Generate text embedding for the search term
-        query_text_embedding = genai.embed_content(
-            model="models/embedding-001",
-            content=search_term,
-            task_type="retrieval_query",
-        )["embedding"]
+    def find_similar_items_by_text(self, search_term, num_results: int = conf.NUM_RESULTS):
+        try:
+            query_text_embedding = genai.embed_content(
+                model="models/embedding-001",
+                content=search_term,
+                task_type="retrieval_query",
+            )["embedding"]
 
-        padded_query_vector = query_text_embedding + [0] * 512 
-        search_result = self.client.search(
-            collection_name='products',
-            query_vector=padded_query_vector,
-        )
-        
-        filtered_texts = [(result.payload["text"], result.score) for result in search_result]
-
-        filtered_products = []
-
-        for text, score in filtered_texts:
-            for product in products:
-                name = product["name"]
-                description = product["description"]
-                image_captions = product["image_captions"]
-                product_text = f"{name} {description} {image_captions}"
-                product_text = product_text.replace("-", "").strip()
-
-                if product_text == text:
-                    filtered_products.append((product, score))
-                    break
-
-        return filtered_products[:k]
-
+            padded_query_vector = [0] * 512 + query_text_embedding
+            search_result = self.client.search(
+                collection_name='products',
+                query_vector=padded_query_vector,
+                append_payload=True,
+                limit=num_results,
+            )
+            
+            filtered_results = [r for r in search_result if "text_embedding" in r.payload]
+            return filtered_results
+        except (requests.exceptions.RequestException):
+            return []
 
     def find_similar_items_by_image(self, query_image_url: str, num_results: int = conf.NUM_RESULTS) -> List[PointStruct]:
         try:
@@ -84,7 +72,7 @@ class QdrantHelper:
             return filtered_results
         except (requests.exceptions.RequestException):
             return []
-
+        
     def embed_image(self, image_url: str) -> List[float]:
         try:
             response = requests.get(image_url)
@@ -93,47 +81,6 @@ class QdrantHelper:
             return self.img2vec.get_vec(image, tensor=False).tolist()
         except (requests.exceptions.RequestException):
             return []
-
-    # def update_vector_store(self, products):
-    #     if products:
-    #         texts = []
-    #         image_embeddings = []
-
-    #         for product in products:
-    #             name = product["name"]
-    #             description = product["description"]
-    #             image_captions = product["image_captions"]
-    #             product_text = f"{name} {description} {image_captions}"
-    #             product_text = product_text.replace("-", "").strip()
-    #             texts.append(product_text)
-
-    #             image_url = product["image_url"]
-    #             image_embedding = self.embed_image(image_url)
-    #             image_embeddings.append(image_embedding)
-
-    #         results = [
-    #             genai.embed_content(
-    #                 model="models/embedding-001",
-    #                 content=sentence,
-    #                 task_type="retrieval_document",
-    #                 title="Qdrant x Gemini",
-    #             )
-    #             for sentence in texts
-    #         ]
-
-    #         self.client.upsert(
-    #             collection_name="products",
-    #             points=[
-    #                 PointStruct(
-    #                     id=idx,
-    #                     vector=list(result["embedding"]) + list(image_embedding),
-    #                     payload={"text": text, "image_embedding": image_embedding},
-    #                 )
-    #                 for idx, (result, text, image_embedding) in enumerate(
-    #                     zip(results, texts, image_embeddings)
-    #                 )
-    #             ],
-    #         )
 
     def add_product_to_vector_store(self, product):
         name = product["name"]
