@@ -1,30 +1,18 @@
-import os
-from typing import List
 from PIL import Image
-from dotenv import load_dotenv
-import conf
-from sentence_transformers import SentenceTransformer
+import torch
+from transformers import CLIPProcessor, CLIPModel, BatchEncoding
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import PointStruct
-from img2vec_pytorch import Img2Vec
-import google.generativeai as genai
 import requests
 from io import BytesIO
-
-load_dotenv()
-try:
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    model_vision = genai.GenerativeModel('gemini-pro-vision')
-except Exception as e:
-    print("Error configuring Gemini API: {e}")
-
+import conf
 
 class QdrantHelper:
     def __init__(self):
         self.client = QdrantClient(host=conf.QDRANT_HOST, port=conf.QDRANT_PORT)
         self.collection_name = conf.COLLECTION_NAME
-        # self.image_model =SentenceTransformer("clip-ViT-L-14")
-        self.img2vec = Img2Vec(model=conf.IMAGE_MODEL_NAME, layer_output_size=conf.VECTOR_SIZE_IMAGE)
+        self.model = CLIPModel.from_pretrained(conf.MODEL_NAME)
+        self.processor = CLIPProcessor.from_pretrained(conf.MODEL_NAME)
 
         if not self.client.collection_exists(self.collection_name):
             self.client.recreate_collection(
@@ -32,54 +20,34 @@ class QdrantHelper:
                 vectors_config={"size": conf.VECTOR_SIZE, "distance": "Cosine"},
             )
 
-    def find_similar_items_by_text(self, search_term, num_results: int = conf.NUM_RESULTS):
+    def find_similar_items(self, query_text=None, query_image_url=None, num_results: int = conf.NUM_RESULTS):
         try:
-            query_text_embedding = genai.embed_content(
-                model="models/embedding-001",
-                content=search_term,
-                task_type="retrieval_query",
-            )["embedding"]
+            if query_text:
+                inputs: BatchEncoding = self.processor(text=[query_text], truncation=True, return_tensors="pt")
+                with torch.no_grad():
+                    text_embeddings = self.model.get_text_features(**inputs)
+                    query_embedding = text_embeddings.squeeze().tolist()
+            elif query_image_url:
+                response = requests.get(query_image_url)
+                response.raise_for_status()
+                image = Image.open(BytesIO(response.content))
+                inputs = self.processor(images=image, return_tensors="pt")
+                with torch.no_grad():
+                    image_embeddings = self.model.get_image_features(**inputs)
+                    query_embedding = image_embeddings.squeeze().tolist()
+            else:
+                raise ValueError("Either query_text or query_image_url must be provided")
 
-            padded_query_vector = [0] * 512 + query_text_embedding
             search_result = self.client.search(
-                collection_name='products',
-                query_vector=padded_query_vector,
-                append_payload=True,
-                limit=num_results,
-            )
-            
-            filtered_results = [r for r in search_result if "text_embedding" in r.payload]
-            return filtered_results
-        except (requests.exceptions.RequestException):
-            return []
-
-    def find_similar_items_by_image(self, query_image_url: str, num_results: int = conf.NUM_RESULTS) -> List[PointStruct]:
-        try:
-            response = requests.get(query_image_url)
-            response.raise_for_status()
-            query_image = Image.open(BytesIO(response.content))
-            query_embedding = self.img2vec.get_vec(query_image.convert('RGB')).tolist()
-            padded_vector = [0.0] * 768 + query_embedding
-            results = self.client.search(
                 collection_name=self.collection_name,
-                query_vector=padded_vector,
+                query_vector=query_embedding,
                 append_payload=True,
                 limit=num_results,
             )
 
-            filtered_results = [r for r in results if "image_embedding" in r.payload]
-
-            return filtered_results
-        except (requests.exceptions.RequestException):
-            return []
-        
-    def embed_image(self, image_url: str) -> List[float]:
-        try:
-            response = requests.get(image_url)
-            response.raise_for_status()
-            image = Image.open(BytesIO(response.content))
-            return self.img2vec.get_vec(image, tensor=False).tolist()
-        except (requests.exceptions.RequestException):
+            return search_result
+        except (requests.exceptions.RequestException, ValueError) as e:
+            print(f"Error: {e}")
             return []
 
     def add_product_to_vector_store(self, product):
@@ -88,28 +56,32 @@ class QdrantHelper:
         image_captions = product["image_captions"]
         product_text = f"{name} {description} {image_captions}"
         product_text = product_text.replace("-", "").strip()
-        
+
+        # Embed the product text
+        text_inputs: BatchEncoding = self.processor(text=[product_text], truncation=True, return_tensors="pt")
+        with torch.no_grad():
+            text_embeddings = self.model.get_text_features(**text_inputs)
 
         # Extract image embedding
         image_url = product["image_url"]
-        image_embedding = self.embed_image(image_url)
+        image_inputs = self.processor(images=[Image.open(requests.get(image_url, stream=True).raw)], return_tensors="pt")
+        with torch.no_grad():
+            image_embeddings = self.model.get_image_features(**image_inputs)
 
-        # Embed the product text
-        result = genai.embed_content(
-            model="models/embedding-001",
-            content=product_text,
-            task_type="retrieval_document",
-            title="Qdrant x Gemini",
-        )
+        # Combine text and image embeddings in the unified vector space
+        text_weight = 0.5  
+        image_weight = 1 - text_weight
+        combined_embedding = text_weight * text_embeddings + image_weight * image_embeddings
 
-        # Upsert the product text and image embedding into Qdrant
+
+        # Upsert the combined embedding into Qdrant
         self.client.upsert(
-            collection_name="products",
+            collection_name=self.collection_name,
             points=[
                 PointStruct(
                     id=product["id"],
-                    vector=result["embedding"] + image_embedding,
-                    payload={"text": product_text, "text_embedding":result["embedding"], "image_embedding": image_embedding},
+                    vector=combined_embedding.squeeze().tolist(),
+                    payload={"text": product_text, "text_embedding": text_embeddings.squeeze().tolist(), "image_embedding": image_embeddings.squeeze().tolist()},
                 )
             ],
         )

@@ -154,17 +154,20 @@ def load_products_from_csv(uploaded_file):
         
         valid_image_url = None
         image_captions = None
+        all_images_not_found = True 
+
         for image_url in image_urls:
             try:
                 response = requests.get(image_url)
                 if response.status_code == 200:
                     valid_image_url = image_url
                     image_captions = generate_image_captions(image_url, True)
+                    all_images_not_found = False
                     break
             except requests.exceptions.RequestException:
-                continue 
+                continue
 
-        if valid_image_url:
+        if valid_image_url and not all_images_not_found:
             product = {
                 "name": row["product_name"],
                 "description": row["description"],

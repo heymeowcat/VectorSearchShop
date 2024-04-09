@@ -84,8 +84,16 @@ def display_product_details(product):
 
 # Find similar products
 def find_similar_products(product):
+    query_text = f"{product['name']} {product['description']} {product['image_captions']}".replace("-", "").strip()
     query_image_url = product["image_url"]
-    results = qdrant_helper.find_similar_items_by_image(query_image_url, 5)
+    if query_text:
+        results = qdrant_helper.find_similar_items(query_text=query_text, num_results=5)
+    elif query_image_url:
+        results = qdrant_helper.find_similar_items(query_image_url=query_image_url, num_results=5)
+    else:
+        st.warning("No query text or image provided.")
+        return
+
     st.subheader("Similar Products")
     similar_products = []
     for result in results:
@@ -100,7 +108,6 @@ def find_similar_products(product):
                 display_product_card(similar_product, score, is_main=False)
     else:
         st.write("No similar products found.")
-
 
 def main():
     st.set_page_config(
@@ -127,9 +134,13 @@ def main():
 
     if search_button:
         if uploaded_image:
-            search_results = qdrant_helper.find_similar_items_by_image(uploaded_image, 5)
+            search_results = qdrant_helper.find_similar_items(query_image_url=uploaded_image, num_results=10)
+        elif search_term:
+            search_results = qdrant_helper.find_similar_items(query_text=search_term, num_results=10)
         else:
-            search_results = qdrant_helper.find_similar_items_by_text(search_term, 5)
+            st.warning("Please enter a search term or upload an image.")
+            search_results = []
+
         if search_results:
             with st.container():
                 st.write("Search Results:")
@@ -157,7 +168,6 @@ def main():
                 for i, product in enumerate(products):
                     with product_grid[i % 3]:
                         display_product_card(product, 1.0, is_main=True)
-
 
 if __name__ == "__main__":
     main()
