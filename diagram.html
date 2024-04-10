@@ -10,25 +10,31 @@
       sequenceDiagram
         participant User
         participant App
-        participant NeuralEncoder
+        participant CLIPModel
         participant Qdrant
         participant Database
     
-        User->>App: Search query
-        App->>NeuralEncoder: Encode query
-        NeuralEncoder-->>App: Query embedding
-        App->>Qdrant: Search with query embedding
+        User->>App: Search query (text/image/both)
+        App->>CLIPModel: Encode query text/image
+        CLIPModel-->>App: Query embeddings
+        App->>Qdrant: Search with query embeddings
         Qdrant-->>App: Search results
-        App->>Database: Load products
+        App->>Database: Load product data
         Database-->>App: Product data
         App-->>User: Display search results
     
         User->>App: View product details
-        App->>NeuralEncoder: Encode product image
-        NeuralEncoder-->>App: Image embedding
+        App->>CLIPModel: Encode product image
+        CLIPModel-->>App: Image embedding
         App->>Qdrant: Search for similar products
         Qdrant-->>App: Similar products
         App-->>User: Display similar products
+    
+        User->>App: Add new product
+        App->>CLIPModel: Encode product text/image
+        CLIPModel-->>App: Combined embeddings
+        App->>Qdrant: Store combined embeddings
+        App->>Database: Store product data
     </div>
     <script>
       mermaid.initialize({
