@@ -36,6 +36,46 @@
         App->>Qdrant: Store combined embeddings
         App->>Database: Store product data
     </div>
+    <div class="mermaid">
+      graph TD
+          subgraph Frontend
+              Streamlit
+          end
+
+          subgraph Backend
+              AppServer[App Server]
+              SQLiteDB[SQLite Database]
+              QdrantVectorStore[Qdrant Vector Store]
+          end
+
+          User[User] -->|Interact| Streamlit
+          Streamlit -->|Send Requests| AppServer
+          AppServer -->|Read/Write| SQLiteDB
+          AppServer -->|Read/Write| QdrantVectorStore
+          AppServer -->|Generate Embeddings| CLIPModel
+
+          subgraph Models
+              CLIPModel[CLIP Model]
+          end
+
+          CLIPModel -->|Provide Embeddings| AppServer
+
+          subgraph External
+              HuggingFaceHub[Hugging Face Hub]
+          end
+
+          HuggingFaceHub -->|Load Pre-trained Model| CLIPModel
+
+      classDef frontend fill:#f2f2f2,stroke:#333,stroke-width:2px;
+      classDef backend fill:#e6e6e6,stroke:#333,stroke-width:2px;
+      classDef models fill:#d9d9d9,stroke:#333,stroke-width:2px;
+      classDef external fill:#cccccc,stroke:#333,stroke-width:2px;
+
+      class Streamlit frontend;
+      class AppServer,SQLiteDB,QdrantVectorStore backend;
+      class CLIPModel models;
+      class HuggingFaceHub external;
+    </div>
     <script>
       mermaid.initialize({
         startOnLoad: true,
