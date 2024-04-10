@@ -89,7 +89,13 @@ def find_similar_products(product):
     if query_text:
         results = qdrant_helper.find_similar_items(query_text=query_text, num_results=5)
     elif query_image_url:
-        results = qdrant_helper.find_similar_items(query_image_url=query_image_url, num_results=5)
+        try:
+            response = requests.get(query_image_url)
+            response.raise_for_status()
+            query_image = Image.open(BytesIO(response.content))
+            results = qdrant_helper.find_similar_items(query_image=query_image, num_results=5)
+        except (requests.exceptions.RequestException):
+            results = []
     else:
         st.warning("No query text or image provided.")
         return
@@ -133,13 +139,16 @@ def main():
         st.warning("No products found.")
 
     if search_button:
-        if uploaded_image:
-            search_results = qdrant_helper.find_similar_items(query_image_url=uploaded_image, num_results=10)
+        if uploaded_image and search_term:
+            search_results = qdrant_helper.find_similar_items(query_text=search_term, query_image=uploaded_image, num_results=10)
+        elif uploaded_image:
+            search_results = qdrant_helper.find_similar_items(query_image=uploaded_image, num_results=10)
         elif search_term:
             search_results = qdrant_helper.find_similar_items(query_text=search_term, num_results=10)
         else:
             st.warning("Please enter a search term or upload an image.")
             search_results = []
+
 
         if search_results:
             with st.container():

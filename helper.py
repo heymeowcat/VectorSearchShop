@@ -4,7 +4,6 @@ from transformers import CLIPProcessor, CLIPModel, BatchEncoding
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import PointStruct
 import requests
-from io import BytesIO
 import conf
 
 class QdrantHelper:
@@ -20,23 +19,42 @@ class QdrantHelper:
                 vectors_config={"size": conf.VECTOR_SIZE, "distance": "Cosine"},
             )
 
-    def find_similar_items(self, query_text=None, query_image_url=None, num_results: int = conf.NUM_RESULTS):
+    def find_similar_items(self, query_text=None, query_image=None, num_results: int = conf.NUM_RESULTS):
         try:
-            if query_text:
+            if query_text and query_image:
+                # Process text input
+                inputs_text: BatchEncoding = self.processor(text=[query_text], truncation=True, return_tensors="pt")
+                with torch.no_grad():
+                    text_embeddings = self.model.get_text_features(**inputs_text)
+
+                # Process image input
+                image = Image.open(query_image)
+                inputs_image = self.processor(images=image, return_tensors="pt")
+                with torch.no_grad():
+                    image_embeddings = self.model.get_image_features(**inputs_image)
+
+                # Combine text and image embeddings in the unified vector space
+                text_weight = 0.5  
+                image_weight = 1 - text_weight
+                combined_embedding = text_weight * text_embeddings + image_weight * image_embeddings
+               
+                query_embedding = combined_embedding.squeeze().tolist()
+
+            elif query_text:
                 inputs: BatchEncoding = self.processor(text=[query_text], truncation=True, return_tensors="pt")
                 with torch.no_grad():
                     text_embeddings = self.model.get_text_features(**inputs)
                     query_embedding = text_embeddings.squeeze().tolist()
-            elif query_image_url:
-                response = requests.get(query_image_url)
-                response.raise_for_status()
-                image = Image.open(BytesIO(response.content))
+
+            elif query_image:
+                image = Image.open(query_image)
                 inputs = self.processor(images=image, return_tensors="pt")
                 with torch.no_grad():
                     image_embeddings = self.model.get_image_features(**inputs)
                     query_embedding = image_embeddings.squeeze().tolist()
+
             else:
-                raise ValueError("Either query_text or query_image_url must be provided")
+                raise ValueError("Either text or image must be provided")
 
             search_result = self.client.search(
                 collection_name=self.collection_name,
@@ -46,7 +64,8 @@ class QdrantHelper:
             )
 
             return search_result
-        except (requests.exceptions.RequestException, ValueError) as e:
+
+        except ValueError as e:
             print(f"Error: {e}")
             return []
 
