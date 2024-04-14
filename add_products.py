@@ -72,10 +72,11 @@ def generate_image_captions(image, useVisionEncoderState):
     try:
         image_captions = None
         if useVisionEncoderState:
-            response = requests.get(image)
-            response.raise_for_status()
-            query_image = Image.open(BytesIO(response.content))
-            image_captions = predict_step(query_image)
+            # response = requests.get(image)
+            # response.raise_for_status()
+            # query_image = Image.open(BytesIO(response.content))
+            # image_captions = predict_step(query_image)
+            image_captions = None
         else:
             prompt = [
                 "List up to 15 relevant search tags for the given image, separated by commas, including product category, brand, colors, patterns, materials, and distinctive features, considering multiple products if present.",
@@ -100,7 +101,11 @@ def add_product(name, description, price, image_url, image_captions):
         "image_captions": image_captions,
         "price": price,
     }
-    qdrant_helper.add_product_to_vector_store(product)
+    try:
+        qdrant_helper.add_product_to_vector_store(product)
+    except Exception as e:
+        st.error(f"Error from qdrant helper: {str(e)}")
+   
 
 def add_product_form():
     st.subheader("Add Product")

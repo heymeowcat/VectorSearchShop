@@ -140,26 +140,36 @@ def main():
 
     if search_button:
         if uploaded_image and search_term:
-            search_results = qdrant_helper.find_similar_items(query_text=search_term, query_image=uploaded_image, num_results=10)
+            search_results = qdrant_helper.combined_search(query_text=search_term, query_image=uploaded_image, num_results=10)
         elif uploaded_image:
-            search_results = qdrant_helper.find_similar_items(query_image=uploaded_image, num_results=10)
+            search_results = qdrant_helper.combined_search(query_image=uploaded_image, num_results=10)
         elif search_term:
-            search_results = qdrant_helper.find_similar_items(query_text=search_term, num_results=10)
+            search_results = qdrant_helper.combined_search(query_text=search_term, num_results=10)
         else:
             st.warning("Please enter a search term or upload an image.")
             search_results = []
 
+        if search_button:
+            if uploaded_image and search_term:
+                search_results = qdrant_helper.combined_search(query_text=search_term, query_image=uploaded_image, num_results=10)
+            elif uploaded_image:
+                search_results = qdrant_helper.combined_search(query_image=uploaded_image, num_results=10)
+            elif search_term:
+                search_results = qdrant_helper.combined_search(query_text=search_term, num_results=10)
+            else:
+                st.warning("Please enter a search term or upload an image.")
+                search_results = []
 
-        if search_results:
-            with st.container():
-                st.write("Search Results:")
+            if search_results:
+                with st.container():
+                    st.write("Search Results:")
+
                 with st.container():
                     search_result_products = []
-                    for result in search_results:
-                        for other_product in load_products():
-                            if f"{other_product['name']} {other_product['description']} {other_product['image_captions']}".replace("-", "").strip() == result.payload["text"]:
-                                search_result_products.append((other_product, result.score))
-                                break
+                    for item_id, score in search_results:
+                        product = next((p for p in products if p['id'] == item_id), None)
+                        if product:
+                            search_result_products.append((product, score))
 
                     if search_result_products:
                         product_grid = st.columns(3)
