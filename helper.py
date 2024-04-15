@@ -72,11 +72,9 @@ class QdrantHelper:
             print(f"Error: {e}")
             return []
         
-    def combined_search(self, query_text=None, query_image=None, num_results=10):
+    def combined_search(self, query_text=None, query_image=None, num_results=conf.NUM_RESULTS):
         # Perform text-based search with BM25
-        text_search_results = []
-        if query_text:
-            text_search_results = self.perform_text_search(query_text)
+        text_search_results = self.perform_text_search(query_text) if query_text else []
         # Perform vector similarity search using Qdrant
         vector_search_results = self.find_similar_items(query_text, query_image, num_results)
 
@@ -88,16 +86,11 @@ class QdrantHelper:
         for item in text_search_results:
             item_id = item["id"]
             if item_id not in seen_ids:
-                seen_ids.add(item_id)
-                text_score = 1.0  # Highest score for exact text match
+                seen_ids.add(item_id)       
 
-                # Check if the item is also in the vector search results
                 vector_score = next((result.score for result in vector_search_results if result.id == item_id), 0.0)
 
-                # Calculate the combined score
-                combined_score = text_score * 0.7 + vector_score * 0.3
-
-                combined_results.append((item_id, combined_score))
+                combined_results.append((item_id, 0.5 + vector_score * 0.5))
 
         # Include vector search results not found in text search
         for result in vector_search_results:
@@ -166,7 +159,7 @@ class QdrantHelper:
         # Tokenize the corpus
         tokenized_corpus = [doc.split() for doc in corpus]
 
-        # Tokenize the query and Create BM25 index 
+        # Tokenize the query and Create BM25 index
         bm25 = BM25Okapi(tokenized_corpus)
         tokenized_query = query_text.split()
 
@@ -178,12 +171,13 @@ class QdrantHelper:
         for idx, row in enumerate(results):
             product_id = row[0]
             product_score = doc_scores[idx]
-            product_details.append({
-                'id': product_id,
-                'relevance_score': product_score
-            })
+            if product_score !=0.0:
+                product_details.append({
+                    'id': product_id,
+                    'relevance_score': product_score
+                })
 
         # Sort product details by relevance score in descending order
         product_details.sort(key=lambda x: x['relevance_score'], reverse=True)
 
-        return product_details[:10]
+        return product_details[:conf.NUM_RESULTS]
