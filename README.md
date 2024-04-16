@@ -86,7 +86,7 @@ The app uses the following key components and libraries:
 
 ### **Architecture Diagram**
 
-![Untitled diagram-2024-04-10-123645](https://github.com/heymeowcat/VectorSearchShop/assets/40495273/000cbadd-1fdf-4e88-b2c7-e0cf08d24348)
+![Untitled diagram-2024-04-16-072131](https://github.com/heymeowcat/VectorSearchShop/assets/40495273/baa46e18-9c29-4356-a5df-0818abfec03b)
 
 ### Components
 
@@ -119,7 +119,7 @@ The app uses the following key components and libraries:
 
 ### **App Flow Diagram**
 
-![Untitled diagram-2024-04-10-115015](https://github.com/heymeowcat/VectorSearchShop/assets/40495273/635b75d6-6ab0-44d9-a98e-45ee2e52c940)
+![Untitled diagram-2024-04-16-072205](https://github.com/heymeowcat/VectorSearchShop/assets/40495273/35548422-91c8-40a6-8b1d-05d8d885aaec)
 
 
 The application flow is as follows:
