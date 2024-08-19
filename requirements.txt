@@ -26,7 +26,7 @@ faiss-cpu==1.8.0
 fastapi==0.110.0
 filelock==3.13.1
 Flask==3.0.2
-Flask-Cors==4.0.0
+Flask-Cors==4.0.1
 flatbuffers==23.5.26
 fonttools==4.50.0
 frozenlist==1.4.1
